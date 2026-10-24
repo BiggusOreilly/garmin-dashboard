@@ -68,19 +68,22 @@ def range_fetch(api,method,start,end):
             return range_fetch(api,method,start,mid.isoformat())+range_fetch(api,method,(mid+timedelta(days=1)).isoformat(),end)
         raise
 
-def refresh(store,api=None,today=None,history_start=None):
+def refresh(store,api=None,today=None,history_start=None,progress=None):
+    progress=progress or (lambda message:None)
     today=today or date.today()
     own=api is None
     warnings=[]
     with sync_lock(store.directory):
         try:
             store.meta('last_attempt',now())
+            progress('Connecting securely to Garmin…')
             api=api or Garmin()
             store.meta('connection',{'state':'connected','checked':now()})
             last=store.meta('activities_through')
             start=(date.fromisoformat(last)-timedelta(days=14)).isoformat() if last else None
             offset=0;seen=set();activity_ids=[]
             while True:
+                progress('Reading activity history, page '+str(offset//99+1)+'…')
                 page=api.call('search_activities',start=offset,limit=99,start_date=start,end_date=today.isoformat())
                 if not isinstance(page,list):raise SafeError('Garmin returned an unexpected activity list. Existing data is safe; the refresh was not marked complete.')
                 if not page:break
@@ -94,7 +97,8 @@ def refresh(store,api=None,today=None,history_start=None):
                 # A short page can be a server cap; continue until an empty page.
             store.meta('activities_through',today.isoformat())
             # Retry previously failed details/FIT on each sync as well.
-            for aid,item in store.items('activities'):
+            for index,(aid,item) in enumerate(store.items('activities'),1):
+                if index==1 or index%20==0:progress('Checking activity details and running FIT files: '+str(index)+'…')
                 if aid in activity_ids or store.get('detail',aid) is None:
                     try:store.put('detail',aid,strip_location(api.call('get_activity',aid)))
                     except SafeError as e:warnings.append('Activity details: '+str(e))
@@ -118,7 +122,8 @@ def refresh(store,api=None,today=None,history_start=None):
                 cursor=store.meta('cursor:'+dataset)
                 first=max(earliest,date.fromisoformat(cursor)-timedelta(days=14)) if cursor else earliest
                 complete=True;count=0
-                for a,b in windows(first,today,days):
+                for index,(a,b) in enumerate(windows(first,today,days),1):
+                    progress('Importing '+dataset+' · window '+str(index)+'…')
                     try:
                         chunks=range_fetch(api,method,a,b)
                         for x,y,payload in chunks:
@@ -136,7 +141,8 @@ def refresh(store,api=None,today=None,history_start=None):
                 cursor=store.meta('cursor:'+dataset)
                 first=max(earliest,date.fromisoformat(cursor)-timedelta(days=2)) if cursor else earliest
                 complete=True
-                for a,b in windows(first,today,1):
+                for index,(a,b) in enumerate(windows(first,today,1),1):
+                    if index==1 or index%30==0:progress('Importing '+dataset+' · day '+str(index)+'…')
                     try:
                         store.put(dataset,a,strip_location(api.call(method,a)))
                         if complete:store.meta('cursor:'+dataset,b)

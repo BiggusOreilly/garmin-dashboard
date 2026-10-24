@@ -62,7 +62,7 @@ def serve(directory=None,port=8765):
                 store=Store(directory)
                 try:
                     if store.meta('synthetic'):raise SafeError('Test fixtures cannot connect to Garmin. Open the production dashboard to refresh.')
-                    result=refresh(store)
+                    result=refresh(store,progress=lambda message:state.update(message=message))
                     state['message']=f"Refresh complete: {result['activities']} activities. {result['warnings']} dataset warnings."
                 except SafeError as e:state['message']=str(e)
                 except Exception:state['message']='Refresh stopped safely. Please try the Refresh Garmin Data launcher.'
