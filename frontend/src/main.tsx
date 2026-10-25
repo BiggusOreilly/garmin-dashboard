@@ -42,6 +42,19 @@ import {
   Legend,
 } from "recharts";
 import "./style.css";
+import {
+  FitnessSnapshot,
+  BandAnalysis,
+  Fitness,
+  Records,
+  Training,
+  Similar,
+  Comparison,
+  RecoveryOverlay,
+  Calendar,
+  InsightList,
+  categories,
+} from "./analytics";
 type Run = {
   id: string;
   name: string;
@@ -60,10 +73,23 @@ type Run = {
   zones: (number | null)[];
   trainingEffect: number | null;
   recoveryTime: number | null;
+  classification?: {
+    label: string;
+    reason: string;
+    confidence: string;
+    automatic: string;
+  };
+  metrics?: any;
+  quality?: any;
+  bands?: any;
+  records?: any;
 };
 type Day = { date: string; [key: string]: number | string | null };
 type Dashboard = {
   activities: Run[];
+  training: any;
+  records: any;
+  insights: any[];
   health: Day[];
   meta: {
     lastSuccess: string | null;
@@ -95,6 +121,10 @@ type Detail = {
       value: number | null;
       reason: string;
       hrChange?: number;
+      firstEfficiency?: number;
+      secondEfficiency?: number;
+      hrAtPaceChange?: number;
+      paceAtHRChange?: number;
       paceChange?: number;
     };
     splits: { km: number; pace: number }[];
@@ -483,7 +513,9 @@ function App() {
   const [data, setData] = useState<Dashboard | null>(null),
     [error, setError] = useState(""),
     [page, setPage] = useState("Overview"),
-    [period, setPeriod] = useState("84"),
+    [period, setPeriod] = useState(
+      () => sessionStorage.getItem("stride-period") || "84",
+    ),
     [customStart, setCustomStart] = useState(""),
     [customEnd, setCustomEnd] = useState(""),
     [mobile, setMobile] = useState(false),
@@ -495,7 +527,25 @@ function App() {
     [maxKm, setMaxKm] = useState(""),
     [refreshing, setRefreshing] = useState(false),
     [message, setMessage] = useState(""),
-    [recoveryX, setRecoveryX] = useState("hrv");
+    [recoveryX, setRecoveryX] = useState("hrv"),
+    [classification, setClassification] = useState(
+      () => sessionStorage.getItem("stride-class") || "",
+    ),
+    [comparison, setComparison] = useState<string[]>(() =>
+      JSON.parse(sessionStorage.getItem("stride-comparison") || "[]"),
+    );
+  useEffect(() => {
+    sessionStorage.setItem("stride-comparison", JSON.stringify(comparison));
+  }, [comparison]);
+  useEffect(() => {
+    sessionStorage.setItem("stride-period", period);
+    sessionStorage.setItem("stride-class", classification);
+  }, [period, classification]);
+  function addComparison(id: string) {
+    setComparison((prev) =>
+      prev.includes(id) ? prev : prev.length < 5 ? [...prev, id] : prev,
+    );
+  }
   async function load() {
     try {
       setData(await request<Dashboard>("/api/dashboard"));
@@ -565,8 +615,37 @@ function App() {
       customStart ||
       (period === "all" ? "1900-01-01" : shift(end, -Number(period) + 1));
   const allRuns = data?.activities.filter(isRun) || [],
-    runs = allRuns.filter((r) => r.date >= start && r.date <= end),
+    runs = allRuns.filter(
+      (r) =>
+        r.date >= start &&
+        r.date <= end &&
+        (!classification || r.classification?.label === classification) &&
+        (!minKm || (r.distance != null && r.distance >= +minKm * 1000)) &&
+        (!maxKm || (r.distance != null && r.distance <= +maxKm * 1000)),
+    ),
     days = (data?.health || []).filter((d) => d.date >= start && d.date <= end);
+  const analysisFilters = new URLSearchParams({
+    start,
+    end,
+    classification,
+    minKm: minKm || "0",
+    maxKm: maxKm || "10000",
+  }).toString();
+  const [context, setContext] = useState<any>(null);
+  useEffect(() => {
+    if (!data) return;
+    let active = true;
+    request<any>("/api/analysis?" + analysisFilters)
+      .then((c) => {
+        if (active) setContext(c);
+      })
+      .catch((e) => {
+        if (active) setMessage(e.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [analysisFilters, data]);
   const totalDistance = sum(runs.map((r) => r.distance)) / 1000,
     totalDuration = sum(runs.map((r) => r.duration));
   const paceRuns = runs.filter(
@@ -655,6 +734,15 @@ function App() {
     { name: "Overview", icon: LayoutDashboard },
     { name: "Runs", icon: Footprints },
     { name: "Running Trends", icon: TrendingUp },
+    { name: "Run Comparison", icon: Activity },
+    { name: "Aerobic Efficiency", icon: TrendingUp },
+    { name: "HR at Pace", icon: Heart },
+    { name: "Fitness Trends", icon: TrendingUp },
+    { name: "5K Performance", icon: Zap },
+    { name: "Personal Records", icon: Footprints },
+    { name: "Training Load", icon: Activity },
+    { name: "Calendar", icon: Clock },
+    { name: "Observations", icon: Activity },
     { name: "Recovery", icon: Heart },
     { name: "Data / Settings", icon: Settings2 },
   ];
@@ -681,9 +769,16 @@ function App() {
       seconds: sum(runs.map((r) => r.zones[i])),
     }));
   }
+  const [runLimit, setRunLimit] = useState(100);
+  useEffect(
+    () => setRunLimit(100),
+    [query, start, end, minKm, maxKm, classification],
+  );
   function runTable(list: Run[], compact = false) {
     return (
-      <div className="table-scroll">
+      <div
+        className={"table-scroll run-table " + (compact ? "compact" : "full")}
+      >
         <table>
           <thead>
             <tr>
@@ -704,7 +799,7 @@ function App() {
             </tr>
           </thead>
           <tbody>
-            {list.map((r) => (
+            {list.slice(0, compact ? list.length : runLimit).map((r) => (
               <tr key={r.id} onClick={() => openRun(r)}>
                 <td>
                   <button
@@ -720,7 +815,11 @@ function App() {
                     <span>
                       <strong>{r.name}</strong>
                       <small>
-                        {shortDate(r.date)} · {r.type.replaceAll("_", " ")}
+                        {shortDate(r.date)} ·{" "}
+                        <span title={r.classification?.reason}>
+                          {r.classification?.label ||
+                            r.type.replaceAll("_", " ")}
+                        </span>
                       </small>
                     </span>
                   </button>
@@ -751,12 +850,30 @@ function App() {
                   </>
                 )}
                 <td>
-                  <ArrowRight size={15} />
+                  <button
+                    className="text-button"
+                    aria-label={"Compare " + r.name}
+                    title="Add to comparison"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      addComparison(r.id);
+                    }}
+                  >
+                    {comparison.includes(r.id) ? "Added ✓" : "Compare +"}
+                  </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        {list.length > runLimit && !compact && (
+          <button
+            className="text-button load-more"
+            onClick={() => setRunLimit(runLimit + 100)}
+          >
+            Show next 100 runs · {runLimit} of {list.length}
+          </button>
+        )}
         {!list.length && <Empty text="No runs match these filters." />}
       </div>
     );
@@ -883,7 +1000,9 @@ function App() {
                         ? "The other half of training."
                         : page === "Data / Settings"
                           ? "Your data, under your control."
-                          : "Your running journal."}
+                          : page === "Runs"
+                            ? "Your running journal."
+                            : page}
               </h1>
               <p>
                 {page === "Overview"
@@ -896,7 +1015,9 @@ function App() {
                         ? "Explore patterns across your training and daily recovery."
                         : page === "Run Detail" && selected
                           ? fullDate(selected.date)
-                          : "A private, read-only connection to the official Garmin Personal API."}
+                          : page === "Data / Settings"
+                            ? "A private, read-only connection to the official Garmin Personal API."
+                            : "Explore the evidence behind your running progress."}
               </p>
             </div>
             <button
@@ -944,6 +1065,49 @@ function App() {
               />
             </div>
           </div>
+          {data && (
+            <div className="analysis-controls global-controls">
+              <label>
+                Run classification
+                <select
+                  aria-label="Run classification"
+                  value={classification}
+                  onChange={(e) => setClassification(e.target.value)}
+                >
+                  <option value="">All classifications</option>
+                  {categories.map((c) => (
+                    <option key={c}>{c}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Minimum km
+                <input
+                  aria-label="Global minimum distance"
+                  type="number"
+                  min="0"
+                  value={minKm}
+                  onChange={(e) => setMinKm(e.target.value)}
+                />
+              </label>
+              <label>
+                Maximum km
+                <input
+                  aria-label="Global maximum distance"
+                  type="number"
+                  min="0"
+                  value={maxKm}
+                  onChange={(e) => setMaxKm(e.target.value)}
+                />
+              </label>
+              <button
+                className="text-button"
+                onClick={() => go("Run Comparison")}
+              >
+                Compare ({comparison.length}/5) →
+              </button>
+            </div>
+          )}
           {message && (
             <div className="notice">
               <RefreshCw size={15} />
@@ -968,6 +1132,83 @@ function App() {
               <RefreshCw className="spin" />
               Loading your local training space…
             </div>
+          )}
+          {data && page === "Run Comparison" && (
+            <Comparison
+              runs={allRuns}
+              ids={comparison}
+              setIds={setComparison}
+              open={(id) => {
+                const r = allRuns.find((r) => r.id === id);
+                if (r) openRun(r);
+              }}
+            />
+          )}
+          {data && ["Aerobic Efficiency", "HR at Pace"].includes(page) && (
+            <BandAnalysis
+              key={page}
+              runs={runs}
+              allRuns={allRuns.filter(
+                (r) =>
+                  (!classification ||
+                    r.classification?.label === classification) &&
+                  (!minKm ||
+                    (r.distance != null && r.distance >= +minKm * 1000)) &&
+                  (!maxKm ||
+                    (r.distance != null && r.distance <= +maxKm * 1000)),
+              )}
+              mode={page === "Aerobic Efficiency" ? "hr" : "pace"}
+              end={end}
+              open={(id) => {
+                const r = allRuns.find((r) => r.id === id);
+                if (r) openRun(r);
+              }}
+            />
+          )}
+          {data && page === "Fitness Trends" && (
+            <Fitness
+              runs={runs}
+              allRuns={allRuns}
+              end={end}
+              open={(id) => {
+                const r = allRuns.find((r) => r.id === id);
+                if (r) openRun(r);
+              }}
+            />
+          )}
+          {data && ["5K Performance", "Personal Records"].includes(page) && (
+            <Records
+              data={data}
+              runs={runs}
+              end={end}
+              five={page === "5K Performance"}
+              open={(id) => {
+                const r = allRuns.find((r) => r.id === id);
+                if (r) openRun(r);
+              }}
+            />
+          )}
+          {data && page === "Training Load" && (
+            <Training
+              training={context?.training || data.training}
+              start={start}
+              end={end}
+            />
+          )}
+          {data && page === "Calendar" && (
+            <Calendar
+              runs={allRuns.filter(
+                (r) =>
+                  !classification || r.classification?.label === classification,
+              )}
+              open={(id) => {
+                const r = allRuns.find((r) => r.id === id);
+                if (r) openRun(r);
+              }}
+            />
+          )}
+          {data && page === "Observations" && (
+            <InsightList items={context?.insights || data.insights} go={go} />
           )}
           {data && page === "Overview" && (
             <>
@@ -1077,23 +1318,17 @@ function App() {
                 </Card>
               </div>
               <div className="grid two">
-                <Card
-                  title="Recent pace trend"
-                  sub="Each run in the selected period · timer-duration pace"
-                >
-                  <Chart
-                    data={chartRuns}
-                    field="pace"
-                    format={pace}
-                    unit="/km"
-                  />
-                </Card>
-                <Card
-                  title="Recent heart-rate trend"
-                  sub="Recorded average heart rate per run"
-                >
-                  <Chart data={chartRuns} field="hr" unit="bpm" />
-                </Card>
+                <FitnessSnapshot
+                  runs={runs}
+                  allRuns={allRuns}
+                  end={end}
+                  go={go}
+                />
+                <InsightList
+                  items={context?.insights || data.insights}
+                  go={go}
+                  limit={3}
+                />
               </div>
               <div className="section-label">
                 <span>RECOVERY AT A GLANCE</span>
@@ -1331,13 +1566,20 @@ function App() {
                   title="Pace at comparable heart rates"
                   sub="Choose a fixed HR band · only recorded paired FIT samples"
                 >
-                  <Comparable runs={runs} mode="hr" />
+                  <button
+                    className="button"
+                    onClick={() => go("Aerobic Efficiency")}
+                  >
+                    Explore aerobic efficiency →
+                  </button>
                 </Card>
                 <Card
                   title="Heart rate at comparable paces"
                   sub="Choose a fixed pace band · only recorded paired FIT samples"
                 >
-                  <Comparable runs={runs} mode="pace" />
+                  <button className="button" onClick={() => go("HR at Pace")}>
+                    Explore HR at pace →
+                  </button>
                 </Card>
                 <Card title="Average heart rate" sub="Per-run summary · bpm">
                   <Chart data={chartRuns} field="hr" unit="bpm" />
@@ -1412,90 +1654,105 @@ function App() {
           )}
           {data && page === "Recovery" && (
             <>
+              <RecoveryOverlay
+                filters={analysisFilters}
+                runs={runs}
+                days={days}
+                training={data.training}
+                open={(id) => {
+                  const r = allRuns.find((r) => r.id === id);
+                  if (r) openRun(r);
+                }}
+              />
               <div className="notice quiet">
                 <Heart size={17} />
                 Patterns are for exploration. Correlation does not establish
                 causation, and these charts do not provide medical diagnoses.
               </div>
-              <div className="grid two">
-                {[
-                  ["hrv", "Overnight HRV", "ms"],
-                  ["rhr", "Resting heart rate", "bpm"],
-                  ["sleep", "Sleep duration", "h"],
-                  ["sleepScore", "Sleep score", "/100"],
-                  ["bodyBattery", "Body Battery", "/100"],
-                  ["stress", "Average stress", "/100"],
-                  ["steps", "Daily steps", "steps"],
-                  ["weight", "Body weight", "kg"],
-                  ["bodyFat", "Body fat", "%"],
-                  ["bmi", "BMI", ""],
-                  ["respiration", "Respiration", "brpm"],
-                  ["spo2", "Pulse Ox", "%"],
-                  ["hydration", "Hydration", "ml"],
-                ].map(([key, label, unit]) => (
+              <details className="wellness-detail">
+                <summary>
+                  Individual wellness charts & additional metrics
+                </summary>
+                <div className="grid two">
+                  {[
+                    ["hrv", "Overnight HRV", "ms"],
+                    ["rhr", "Resting heart rate", "bpm"],
+                    ["sleep", "Sleep duration", "h"],
+                    ["sleepScore", "Sleep score", "/100"],
+                    ["bodyBattery", "Body Battery", "/100"],
+                    ["stress", "Average stress", "/100"],
+                    ["steps", "Daily steps", "steps"],
+                    ["weight", "Body weight", "kg"],
+                    ["bodyFat", "Body fat", "%"],
+                    ["bmi", "BMI", ""],
+                    ["respiration", "Respiration", "brpm"],
+                    ["spo2", "Pulse Ox", "%"],
+                    ["hydration", "Hydration", "ml"],
+                  ].map(([key, label, unit]) => (
+                    <Card
+                      key={key}
+                      title={label}
+                      sub="Daily recorded values · gaps indicate missing data"
+                    >
+                      <Chart
+                        data={days.map((d) => ({
+                          ...d,
+                          [key]:
+                            key === "sleep" && typeof d[key] === "number"
+                              ? Number(d[key]) / 3600
+                              : d[key],
+                        }))}
+                        field={key}
+                        unit={unit}
+                        sync="recovery"
+                      />
+                    </Card>
+                  ))}
                   <Card
-                    key={key}
-                    title={label}
-                    sub="Daily recorded values · gaps indicate missing data"
+                    title="Recovery & running performance"
+                    sub="Same-day daily values compared with each run’s pace"
+                    action={
+                      <select
+                        aria-label="Recovery variable"
+                        value={recoveryX}
+                        onChange={(e) => setRecoveryX(e.target.value)}
+                      >
+                        {[
+                          ["hrv", "HRV"],
+                          ["rhr", "Resting HR"],
+                          ["sleep", "Sleep (seconds)"],
+                          ["bodyBattery", "Body Battery"],
+                          ["stress", "Stress"],
+                        ].map(([v, l]) => (
+                          <option key={v} value={v}>
+                            {l}
+                          </option>
+                        ))}
+                      </select>
+                    }
+                  >
+                    <ScatterPlot
+                      data={recoveryPoints}
+                      x={recoveryX}
+                      y="pace"
+                      xUnit={recoveryX}
+                      yUnit="sec/km"
+                    />
+                  </Card>
+                  <Card
+                    title="Running volume alongside recovery"
+                    sub="Use synchronised hover to compare the same date"
                   >
                     <Chart
-                      data={days.map((d) => ({
-                        ...d,
-                        [key]:
-                          key === "sleep" && typeof d[key] === "number"
-                            ? Number(d[key]) / 3600
-                            : d[key],
-                      }))}
-                      field={key}
-                      unit={unit}
+                      data={daily}
+                      field="km"
+                      kind="bar"
+                      unit="km"
                       sync="recovery"
                     />
                   </Card>
-                ))}
-                <Card
-                  title="Recovery & running performance"
-                  sub="Same-day daily values compared with each run’s pace"
-                  action={
-                    <select
-                      aria-label="Recovery variable"
-                      value={recoveryX}
-                      onChange={(e) => setRecoveryX(e.target.value)}
-                    >
-                      {[
-                        ["hrv", "HRV"],
-                        ["rhr", "Resting HR"],
-                        ["sleep", "Sleep (seconds)"],
-                        ["bodyBattery", "Body Battery"],
-                        ["stress", "Stress"],
-                      ].map(([v, l]) => (
-                        <option key={v} value={v}>
-                          {l}
-                        </option>
-                      ))}
-                    </select>
-                  }
-                >
-                  <ScatterPlot
-                    data={recoveryPoints}
-                    x={recoveryX}
-                    y="pace"
-                    xUnit={recoveryX}
-                    yUnit="sec/km"
-                  />
-                </Card>
-                <Card
-                  title="Running volume alongside recovery"
-                  sub="Use synchronised hover to compare the same date"
-                >
-                  <Chart
-                    data={daily}
-                    field="km"
-                    kind="bar"
-                    unit="km"
-                    sync="recovery"
-                  />
-                </Card>
-              </div>
+                </div>
+              </details>
             </>
           )}
           {data && page === "Run Detail" && selected && (
@@ -1544,6 +1801,84 @@ function App() {
                   foot={`${n(selected.calories)} kcal`}
                 />
               </div>
+              <Card
+                title="Classification & data quality"
+                sub={selected.classification?.reason}
+              >
+                <div className="analysis-controls">
+                  <span className="small-tag">
+                    {selected.classification?.confidence || "unavailable"}
+                  </span>
+                  <label>
+                    Local classification override
+                    <select
+                      aria-label="Classification override"
+                      value={
+                        selected.classification?.confidence === "manual"
+                          ? selected.classification.label
+                          : ""
+                      }
+                      onChange={async (e) => {
+                        try {
+                          await request("/api/classification/" + selected.id, {
+                            method: "POST",
+                            headers: {
+                              "X-Stride-Local": "1",
+                              "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({
+                              classification: e.target.value || null,
+                            }),
+                          });
+                          const next =
+                            await request<Dashboard>("/api/dashboard");
+                          setData(next);
+                          setSelected(
+                            next.activities.find((r) => r.id === selected.id) ||
+                              selected,
+                          );
+                        } catch (e) {
+                          setMessage((e as Error).message);
+                        }
+                      }}
+                    >
+                      <option value="">Automatic</option>
+                      {categories.map((c) => (
+                        <option key={c}>{c}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    className="button"
+                    onClick={() => addComparison(selected.id)}
+                  >
+                    {comparison.includes(selected.id)
+                      ? "Added to comparison ✓"
+                      : "Add to comparison +"}
+                  </button>
+                  <button
+                    className="text-button"
+                    onClick={() => go("Run Comparison")}
+                  >
+                    Open comparison →
+                  </button>
+                </div>
+                <p className="caption">
+                  {selected.quality?.issues?.join(" · ") ||
+                    "Usable recorded sensor coverage"}{" "}
+                  · Reliable movement coverage{" "}
+                  {n((selected.quality?.coverage || 0) * 100)}%
+                </p>
+              </Card>
+              <Similar
+                run={selected}
+                runs={allRuns}
+                add={addComparison}
+                open={(id) => {
+                  const r = allRuns.find((r) => r.id === id);
+                  if (r) openRun(r);
+                }}
+              />
               {detailError && <div className="error">{detailError}</div>}
               {!detail && !detailError && (
                 <div className="loading">
@@ -1695,6 +2030,69 @@ function App() {
                   </p>
                 </Card>
                 <Card
+                  title="Performance analytics methods"
+                  sub="Versioned, incremental local calculations"
+                >
+                  <div className="method-copy">
+                    <p>
+                      <strong>Sampling quality:</strong> exclude gaps over 10s,
+                      movement outside 0.5–10 m/s, inconsistent distance/speed,
+                      HR outside 35–220 bpm and abrupt HR changes over 5 bpm/s.
+                      Cadence outside 80–240 spm is unavailable. These gates
+                      reduce obvious errors but cannot identify every optical
+                      cadence lock.
+                    </p>
+                    <p>
+                      <strong>Comparable bands:</strong> remove the first 10
+                      minutes, require continuous bouts of at least 30 seconds
+                      in a half-open band and 180 matched seconds per run.
+                      Time-weight speed before converting to pace; HR is
+                      time-weighted. Rolling lines use 28-day means. Changes
+                      require three runs in each non-overlapping comparison
+                      window. Lower values can indicate improvement; terrain,
+                      weather and sensors remain confounders.
+                    </p>
+                    <p>
+                      <strong>Records:</strong> interpolate segment ends from
+                      monotonic cumulative distance. Reject candidates spanning
+                      pauses, gaps over 10s or implausible distance changes. 400
+                      m requires ≤2s sampling. Net downhill over 1% is flagged
+                      and excluded from PBs; unknown grade is disclosed. Records
+                      reflect imported history, not certified races. Race labels
+                      use title cues.
+                    </p>
+                    <p>
+                      <strong>Classification:</strong> explainable heuristics
+                      combine configured Garmin zone distribution, duration and
+                      sustained speed changes. Categories are provisional, not
+                      physiological diagnoses. Local manual overrides are stored
+                      in SQLite. Similar runs use distance ±25%, duration ±35%
+                      and rank HR, pace, ascent and category; no exact route
+                      matching is claimed.
+                    </p>
+                    <p>
+                      <strong>Recovery:</strong> overlays standardise each
+                      metric to its own mean and standard deviation. Pearson
+                      associations require ten paired days, permit 0/1/2-day
+                      lag, and do not imply causation. Running performance uses
+                      HR in a fixed pace band. No medical interpretation or
+                      third-party analysis is used.
+                    </p>
+                    <p>
+                      <strong>Volume and observations:</strong> rolling 7/28-day
+                      sums include the current day; weeks start Monday.
+                      Zone-weighted minutes sum zone minutes × zone number and
+                      are only a load proxy. Abrupt volume flags use &gt;30% and
+                      ≥5 km above four preceding complete weeks, not a precise
+                      injury rule. Insights need adequate samples and a
+                      meaningful change; thresholds and supporting values appear
+                      on each observation. Calculations are cached by
+                      sensor/source revision and method version, entirely
+                      locally.
+                    </p>
+                  </div>
+                </Card>
+                <Card
                   title="How the calculations work"
                   sub="Transparent methods, no invented recovery scores"
                   wide
@@ -1714,7 +2112,7 @@ function App() {
                       ratio − second ratio) ÷ first ratio. Require ≥20 minutes
                       after warm-up, paired valid speed/HR coverage ≥80% in each
                       half, ≤10-second sample gaps, speed 0.5–10 m/s and HR
-                      30–240 bpm. Suppress when speed coefficient of variation
+                      35–220 bpm. Suppress when speed coefficient of variation
                       exceeds 15%. Positive values mean lower speed per
                       heartbeat later; terrain, heat and sensors can affect the
                       result.
@@ -1731,11 +2129,11 @@ function App() {
                     <p>
                       <strong>Comparable HR / pace:</strong> time-weight
                       recorded FIT speed or HR only inside the selected fixed
-                      band; require at least 120 seconds per run. No
-                      summary-level matching or estimated sensor values. A
-                      Garmin-reported fastest 5 km segment is shown only when
-                      present; it is a best among imported records, not a
-                      verified lifetime race PB.
+                      band; require at least 180 seconds per run after warm-up
+                      in stable bouts. No summary-level matching or estimated
+                      sensor values. A Garmin-reported fastest 5 km segment is
+                      shown only when present; it is a best among imported
+                      records, not a verified lifetime race PB.
                     </p>
                   </div>
                 </Card>
@@ -1867,6 +2265,39 @@ function RunDetail({
               <p>{a.drift.reason}</p>
             </div>
             <div>
+              <span>First / second efficiency</span>
+              <strong>
+                {n(a.drift.firstEfficiency, 4)} /{" "}
+                {n(a.drift.secondEfficiency, 4)}
+              </strong>
+              <p>
+                Time-weighted speed ÷ HR after warm-up. Lower in the second half
+                produces positive decoupling.
+              </p>
+            </div>
+            <div>
+              <span>HR change at comparable pace</span>
+              <strong>
+                {n(a.drift.hrAtPaceChange, 1)}
+                <small> bpm</small>
+              </strong>
+              <p>
+                Second minus first half in shared 15 sec/km pace bands; ≥2
+                minutes in each half.
+              </p>
+            </div>
+            <div>
+              <span>Pace change at comparable HR</span>
+              <strong>
+                {n(a.drift.paceAtHRChange, 1)}
+                <small> sec/km</small>
+              </strong>
+              <p>
+                Second minus first half in shared 5 bpm bands; ≥2 minutes in
+                each half. Positive means slower.
+              </p>
+            </div>
+            <div>
               <span>Full-kilometre split consistency</span>
               <strong>
                 {n(a.splitCV, 1)}
@@ -1915,102 +2346,6 @@ function RunDetail({
           </div>
         </Card>
       </div>
-    </>
-  );
-}
-function Comparable({ runs, mode }: { runs: Run[]; mode: "hr" | "pace" }) {
-  const [low, setLow] = useState(mode === "hr" ? 130 : 300),
-    [high, setHigh] = useState(mode === "hr" ? 150 : 360),
-    [points, setPoints] = useState<Record<string, unknown>[]>([]),
-    [busy, setBusy] = useState(false),
-    [failed, setFailed] = useState(false);
-  async function calculate() {
-    setBusy(true);
-    setFailed(false);
-    const out: Record<string, unknown>[] = [];
-    try {
-      for (const r of [...runs].reverse()) {
-        const d = await request<Detail>("/api/run/" + r.id);
-        let secs = 0,
-          value = 0;
-        const rs = d.series.records;
-        for (let i = 1; i < rs.length; i++) {
-          const b = rs[i],
-            dt = b.t - rs[i - 1].t;
-          if (
-            dt <= 0 ||
-            dt > 10 ||
-            b.speed == null ||
-            b.hr == null ||
-            b.speed < 0.5 ||
-            b.hr < 30 ||
-            b.hr > 240
-          )
-            continue;
-          const p = 1000 / b.speed;
-          const match =
-            mode === "hr" ? b.hr >= low && b.hr <= high : p >= low && p <= high;
-          if (match) {
-            secs += dt;
-            value += (mode === "hr" ? b.speed : b.hr) * dt;
-          }
-        }
-        if (secs >= 120)
-          out.push({
-            date: r.date,
-            value: mode === "hr" ? 1000 / (value / secs) : value / secs,
-          });
-      }
-      setPoints(out);
-    } catch {
-      setFailed(true);
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <>
-      <div className="band-filter">
-        <input
-          type="number"
-          aria-label="Lower comparable band"
-          value={low}
-          onChange={(e) => {
-            setLow(Number(e.target.value));
-            setPoints([]);
-          }}
-        />
-        <span>to</span>
-        <input
-          type="number"
-          aria-label="Upper comparable band"
-          value={high}
-          onChange={(e) => {
-            setHigh(Number(e.target.value));
-            setPoints([]);
-          }}
-        />
-        <span>{mode === "hr" ? "bpm" : "sec/km"}</span>
-        <button
-          className="button"
-          onClick={calculate}
-          disabled={busy || low > high}
-        >
-          {busy ? "Calculating…" : "Compare"}
-        </button>
-      </div>
-      {failed ? (
-        <Empty text="Could not read local records. Try Compare again." />
-      ) : points.length ? (
-        <Chart
-          data={points}
-          field="value"
-          unit={mode === "hr" ? "/km" : "bpm"}
-          format={mode === "hr" ? pace : undefined}
-        />
-      ) : (
-        <Empty text="Select a band and compare runs with at least 2 minutes of matching sensor data." />
-      )}
     </>
   );
 }

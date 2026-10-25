@@ -27,7 +27,7 @@ def activity(item,detail=None):
     def field(a,b=None):return num(s.get(a)) if s.get(a) is not None else num(item.get(b or a))
     dist=field('distance');duration=field('duration')
     kind=d.get('activityTypeDTO') or item.get('activityType') or item.get('activityTypeDTO') or {}
-    return {'id':str(item.get('activityId',d.get('activityId'))),'name':item.get('activityName') or d.get('activityName') or 'Untitled activity','date':str(s.get('startTimeLocal') or item.get('startTimeLocal') or '')[:10],'start':s.get('startTimeLocal') or item.get('startTimeLocal'),'type':kind.get('typeKey','unknown'),'distance':dist,'duration':duration,'moving':field('movingDuration'),'pace':pace(dist,duration),'hr':field('averageHR') or None,'maxHR':field('maxHR') or None,'cadence':field('averageRunCadence','averageRunningCadenceInStepsPerMinute') or None,'elevation':field('elevationGain'),'calories':field('calories'),'fiveK':num(item.get('fastestSplit_5000')) or None,'zones':[num(item.get('hrTimeInZone_'+str(i))) for i in range(1,6)],'trainingEffect':field('trainingEffect'),'recoveryTime':field('recoveryTime')}
+    return {'id':str(item.get('activityId',d.get('activityId'))),'name':item.get('activityName') or d.get('activityName') or 'Untitled activity','date':str(s.get('startTimeLocal') or item.get('startTimeLocal') or '')[:10],'start':s.get('startTimeLocal') or item.get('startTimeLocal'),'type':kind.get('typeKey','unknown'),'distance':dist,'duration':duration,'elapsed':field('elapsedDuration'),'moving':field('movingDuration'),'pace':pace(dist,duration),'hr':field('averageHR') or None,'maxHR':field('maxHR') or None,'cadence':field('averageRunCadence','averageRunningCadenceInStepsPerMinute') or None,'elevation':field('elevationGain'),'stride':field('avgStrideLength','averageStrideLength'),'calories':field('calories'),'fiveK':num(item.get('fastestSplit_5000')) or None,'zones':[num(item.get('hrTimeInZone_'+str(i))) for i in range(1,6)],'trainingEffect':field('trainingEffect'),'recoveryTime':field('recoveryTime')}
 
 def health(store):
     days={}
@@ -52,14 +52,8 @@ def health(store):
     return sorted(days.values(),key=lambda x:x['date'])
 
 def intervals(records):
-    out=[]
-    for a,b in zip(records,records[1:]):
-        t1=num(a.get('t'));t2=num(b.get('t'))
-        if t1 is None or t2 is None:continue
-        dt=t2-t1;speed=num(b.get('speed'));hr=num(b.get('hr'))
-        if not (0<dt<=10 and speed is not None and .5<=speed<=10 and hr is not None and 30<=hr<=240):continue
-        out.append({'t':t2,'dt':dt,'speed':speed,'hr':hr,'cadence':num(b.get('cadence'))})
-    return out
+    from .quality import clean_intervals
+    return [r for r in clean_intervals(records) if r['hr'] is not None]
 
 def drift(records):
     """10-min warm-up removed, time-weighted speed/HR ratios over equal elapsed halves."""
@@ -84,10 +78,26 @@ def drift(records):
         speeds.append(speed);hrs.append(hr);ratios.append(speed/hr)
     all_speed=[r['speed'] for r in usable]
     if pstdev(all_speed)/mean(all_speed)>.15:return {'value':None,'reason':'Pace varies too much for a steady-run decoupling comparison (CV >15%).'}
-    return {'value':100*(ratios[0]-ratios[1])/ratios[0],'hrChange':100*(hrs[1]-hrs[0])/hrs[0],'paceChange':100*((1/speeds[1])/(1/speeds[0])-1),'reason':'Positive decoupling = lower speed per heartbeat in the second half. Terrain, heat, fatigue and sensor noise can affect it.'}
+    # Match common narrow bands in both halves instead of equating raw half means.
+    matched_hr=[];matched_pace=[]
+    from .quality import weighted
+    for low in range(100,220,5):
+        groups=[[r for r in h if low<=r['hr']<low+5] for h in halves]
+        if all(sum(r['dt'] for r in g)>=120 for g in groups):
+            matched_pace.append(1000/weighted(groups[1],'speed')-1000/weighted(groups[0],'speed'))
+    for low in range(180,600,15):
+        groups=[[r for r in h if low<=1000/r['speed']<low+15] for h in halves]
+        if all(sum(r['dt'] for r in g)>=120 for g in groups):
+            matched_hr.append(weighted(groups[1],'hr')-weighted(groups[0],'hr'))
+    return {'value':100*(ratios[0]-ratios[1])/ratios[0],'hrAtPaceChange':avg(matched_hr),'paceAtHRChange':avg(matched_pace),'firstEfficiency':ratios[0],'secondEfficiency':ratios[1],'firstHR':hrs[0],'secondHR':hrs[1],'firstPace':1000/speeds[0],'secondPace':1000/speeds[1],'hrChange':100*(hrs[1]-hrs[0])/hrs[0],'paceChange':100*((1/speeds[1])/(1/speeds[0])-1),'reason':'Positive decoupling = lower speed per heartbeat in the second half. Terrain, heat, fatigue and sensor noise can affect it.'}
 
 def kilometre_splits(records):
     """Interpolate cumulative distance crossings; do not mistake Garmin split summaries for km laps."""
+    from .quality import number
+    for a,b in zip(records,records[1:]):
+        da,db,ta,tb=[number(v) for v in (a.get('distance'),b.get('distance'),a.get('t'),b.get('t'))]
+        if None in (da,db,ta,tb):return []
+        if tb<=ta or db<da or (db-da)/(tb-ta)>10:return []
     splits=[];previous=None;boundary=1000;last_time=None
     for r in records:
         d=num(r.get('distance'));t=num(r.get('t'))
@@ -103,14 +113,20 @@ def kilometre_splits(records):
                 splits.append({'km':len(splits)+1,'pace':crossing-last_time,'duration':crossing-last_time})
                 last_time=crossing;boundary+=1000
         previous=(d,t)
+    from .quality import clean_intervals, weighted
+    valid=clean_intervals(records)
+    for s in splits:
+        chunk=[r for r in valid if r['distance'] is not None and (s['km']-1)*1000<r['distance']<=s['km']*1000]
+        s['hr']=weighted(chunk,'hr');s['cadence']=weighted(chunk,'cadence')
     return splits
 
 def detail_metrics(series):
     records=(series or {}).get('records',[]);splits=kilometre_splits(records)
     p=[s['pace'] for s in splits]
-    valid=intervals(records)
+    from .quality import clean_intervals, weighted
+    valid=clean_intervals(records)
     mid=(records[-1]['t']/2) if records else 0
-    def cad(h):return avg([r['cadence'] for r in valid if (r['t']<mid)==h])
+    def cad(h):return weighted([r for r in valid if (r['t']<mid)==h],'cadence')
     first=cad(True);second=cad(False)
     n=len(p)//2
     split_change=(avg(p[-n:])/avg(p[:n])-1)*100 if n and avg(p[:n]) else None
@@ -118,5 +134,14 @@ def detail_metrics(series):
 
 def dashboard(store):
     activities=sorted([activity(x,store.get('detail',str(x.get('activityId')))) for x in store.all('activities')],key=lambda x:x['date'],reverse=True)
+    from .performance import derived, volume, progression, insights
+    for run in activities:
+        if 'running' in run['type']:
+            run.update(derived(store,run))
+            override=store.db.execute('SELECT classification FROM run_overrides WHERE id=?',(run['id'],)).fetchone()
+            if override:
+                run['classification']={**run['classification'],'label':override[0],'reason':'Your local manual override. Automatic: '+run['classification']['automatic'],'confidence':'manual'}
     days=health(store)
-    return {'activities':activities,'health':days,'meta':{'lastSuccess':store.meta('last_success'),'lastCompleted':store.meta('last_completed'),'lastAttempt':store.meta('last_attempt'),'earliest':store.meta('history_start'),'connection':store.meta('connection') or {'state':'not_connected'},'datasets':store.meta('datasets') or {},'warnings':store.meta('warnings') or [],'activityCount':len(activities),'healthDays':len(days),'synthetic':store.meta('synthetic') or False,'fitnessAge':get(store.get('fitnessAge','current'),'fitnessAge')},'units':'metric','gpsEnabled':False}
+    runs=[r for r in activities if 'running' in r['type'] and r['date']]
+    training=volume(runs)
+    return {'training':training,'records':progression(runs),'insights':insights(runs,days,training,date.today().isoformat()),'activities':activities,'health':days,'meta':{'lastSuccess':store.meta('last_success'),'lastCompleted':store.meta('last_completed'),'lastAttempt':store.meta('last_attempt'),'earliest':store.meta('history_start'),'connection':store.meta('connection') or {'state':'not_connected'},'datasets':store.meta('datasets') or {},'warnings':store.meta('warnings') or [],'activityCount':len(activities),'healthDays':len(days),'synthetic':store.meta('synthetic') or False,'fitnessAge':get(store.get('fitnessAge','current'),'fitnessAge')},'units':'metric','gpsEnabled':False}

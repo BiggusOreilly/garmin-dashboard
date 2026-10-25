@@ -1476,3 +1476,566 @@ footer i {
     transition: none !important;
   }
 }
+/* Performance workspace: measured colour, clear evidence, adaptable density. */
+.sidebar nav {
+  overflow-y: auto;
+  min-height: 0;
+  scrollbar-width: thin;
+}
+.sidebar nav button {
+  min-height: 38px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+  font-size: 12px;
+}
+.sidebar-bottom {
+  padding-top: 15px;
+  margin-top: 15px;
+}
+.sidebar-bottom p {
+  font-size: 11px;
+}
+.analysis-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 0 20px;
+}
+.analysis-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.analysis-controls input,
+.analysis-controls select,
+select {
+  background: #111713;
+  border: 1px solid #354137;
+  color: #e8eee7;
+  border-radius: 7px;
+  padding: 9px 11px;
+  max-width: 100%;
+  min-width: 0;
+}
+.analysis-controls input[type="number"] {
+  width: 110px;
+}
+.global-controls {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 18px;
+}
+.analysis-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 22px;
+  margin: 12px 0 25px;
+}
+.analysis-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.analysis-stat > span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.analysis-stat strong {
+  font-size: 20px;
+  font-weight: 550;
+  letter-spacing: -0.5px;
+}
+.analysis-stat small {
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.analysis-stats.featured {
+  background: #1a211b;
+  border: 1px solid #3d4a37;
+  border-radius: 12px;
+  padding: 25px;
+}
+.analysis-chart {
+  height: 280px;
+  width: 100%;
+  min-width: 0;
+  color: #8f9c92;
+  font-size: 11px;
+}
+.insight-row {
+  display: flex;
+  gap: 13px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 17px 0;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--border);
+  width: 100%;
+  line-height: 1.6;
+}
+.insight-row strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+}
+.insight-row small {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 5px;
+}
+.insight-row:hover strong {
+  color: var(--accent);
+}
+.insight-mark {
+  color: var(--accent);
+  font-size: 20px;
+}
+.fitness-links {
+  display: grid;
+  gap: 0;
+}
+.fitness-links button {
+  display: flex;
+  justify-content: space-between;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 17px 0;
+  text-align: left;
+  font-size: 12px;
+}
+.fitness-links button:hover {
+  color: var(--accent);
+}
+.evidence-list {
+  max-height: 390px;
+  overflow: auto;
+}
+.evidence-list button {
+  display: flex;
+  gap: 15px;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--border);
+  padding: 14px 0;
+  font-size: 12px;
+}
+.evidence-list small {
+  color: var(--muted);
+}
+.record-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border);
+}
+.record-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--surface);
+  padding: 24px;
+  text-align: left;
+  border: 0;
+  min-width: 0;
+}
+.record-tile:hover {
+  background: #202a21;
+}
+.record-tile > span {
+  color: var(--accent);
+  font-size: 12px;
+}
+.record-tile strong {
+  font-size: 29px;
+  font-weight: 500;
+}
+.record-tile small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+.similar-list > div {
+  border-top: 1px solid var(--border);
+  padding: 18px 0;
+}
+.similar-list p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.8;
+}
+.similar-list .small-tag {
+  margin-left: 15px;
+}
+.comparison-picker {
+  max-height: 250px;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 18px;
+}
+.comparison-picker label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding: 12px 0;
+  font-size: 12px;
+  cursor: pointer;
+}
+.comparison-picker small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 6px;
+}
+input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.comparison-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.comparison-legend button {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid;
+  padding: 10px 5px;
+  font-size: 11px;
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+.comparison-legend i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.comparison-table th:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  min-width: 150px;
+  z-index: 1;
+}
+.overlay-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin-bottom: 25px;
+}
+.overlay-options label {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--muted);
+}
+.block {
+  display: block;
+  color: var(--muted);
+  margin-top: 5px;
+  font-size: 10px;
+}
+.calendar-head,
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.calendar-head span {
+  font-size: 10px;
+  color: var(--muted);
+  padding: 12px;
+}
+.calendar-day {
+  min-height: 122px;
+  border-top: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding: 9px;
+  min-width: 0;
+}
+.calendar-day.outside {
+  opacity: 0.45;
+}
+.calendar-date {
+  color: var(--muted);
+  font-size: 11px;
+}
+.calendar-run {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border: 0;
+  border-left: 2px solid var(--accent);
+  background: #252f23;
+  width: 100%;
+  padding: 9px 7px;
+  text-align: left;
+  margin-top: 9px;
+  overflow-wrap: anywhere;
+}
+.calendar-run.intense {
+  border-left-color: #caaa80;
+  background: #302b21;
+}
+.calendar-run strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.calendar-run span {
+  font-size: 10px;
+  color: #bac6b9;
+}
+.calendar-run small {
+  font-size: 9px;
+  color: var(--muted);
+}
+.calendar-total {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 10px;
+  margin: 0;
+  padding: 10px;
+  background: #141a16;
+}
+.calendar-total strong {
+  font-weight: 500;
+  color: #bcc8ba;
+}
+.card {
+  min-width: 0;
+}
+.content > .card {
+  margin-bottom: 20px;
+}
+@media (max-height: 850px) and (min-width: 901px) {
+  .sidebar-bottom {
+    display: none;
+  }
+  .sidebar {
+    padding-top: 22px;
+  }
+  .workspace {
+    margin-bottom: 12px;
+  }
+}
+@media (max-width: 700px) {
+  .analysis-chart {
+    height: 250px;
+  }
+  .analysis-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+  }
+  .analysis-stat strong {
+    font-size: 17px;
+  }
+  .comparison-picker {
+    grid-template-columns: 1fr;
+  }
+  .record-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .record-tile {
+    padding: 18px 12px;
+  }
+  .record-tile strong {
+    font-size: 25px;
+  }
+  .calendar-day {
+    padding: 4px;
+    min-height: 105px;
+  }
+  .calendar-run {
+    padding: 6px 3px;
+    gap: 4px;
+  }
+  .calendar-run strong {
+    font-size: 10px;
+  }
+  .calendar-run span {
+    font-size: 8px;
+  }
+  .calendar-run small {
+    display: none;
+  }
+  .calendar-head span {
+    padding: 10px 3px;
+    font-size: 9px;
+  }
+  .calendar-controls {
+    gap: 9px;
+  }
+  .calendar-controls input {
+    width: 130px;
+  }
+  .similar-list .small-tag {
+    display: block;
+    margin: 12px 0;
+  }
+  .evidence-list button {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .global-controls label {
+    flex: 1 1 100px;
+  }
+  .global-controls select {
+    max-width: 200px;
+  }
+  .content > .card {
+    margin-bottom: 14px;
+  }
+}
+.analysis-panel {
+  padding: 22px;
+}
+.analysis-panel > .card-head {
+  padding: 0 0 20px;
+}
+.analysis-panel .analysis-controls:last-child {
+  margin-bottom: 0;
+}
+.comparison-table {
+  table-layout: fixed;
+  min-width: 600px;
+  white-space: normal;
+}
+.comparison-table th,
+.comparison-table td {
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+.comparison-table th:first-child {
+  width: 190px;
+  min-width: 190px;
+}
+.comparison-table td {
+  vertical-align: top;
+}
+.analysis-controls select {
+  max-width: 300px;
+}
+@media (max-width: 700px) {
+  .analysis-panel {
+    padding: 17px 13px;
+  }
+  .analysis-panel > .card-head {
+    padding-bottom: 18px;
+  }
+  .comparison-table th:first-child {
+    width: 135px;
+    min-width: 135px;
+  }
+  .comparison-table {
+    min-width: 510px;
+  }
+  .analysis-panel .calendar-day {
+    padding: 4px 2px;
+  }
+  .analysis-controls select {
+    max-width: 240px;
+  }
+}
+.record-tile:last-child {
+  grid-column: 1/-1;
+}
+.analysis-panel .table-scroll {
+  max-height: 560px;
+  overflow: auto;
+}
+.wellness-detail {
+  margin: 24px 0;
+}
+.wellness-detail summary {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  color: #becdb4;
+  font-size: 12px;
+  margin-bottom: 20px;
+  background: var(--surface);
+}
+@media (max-width: 620px) {
+  .run-table table,
+  .run-table tbody {
+    display: block;
+    width: 100%;
+    white-space: normal;
+  }
+  .run-table thead {
+    display: none;
+  }
+  .run-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 20px;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .run-table td {
+    padding: 8px 0;
+    border: 0;
+    min-width: 0;
+    font-size: 12px;
+  }
+  .run-table td:first-child {
+    grid-column: 1/-1;
+    padding: 0 0 8px;
+  }
+  .run-table td:last-child {
+    grid-column: 1/-1;
+    padding-top: 10px;
+  }
+  .run-table.full td:nth-child(n + 6):not(:last-child) {
+    display: none;
+  }
+  .run-table td:nth-child(2):before,
+  .run-table td:nth-child(3):before,
+  .run-table td:nth-child(4):before,
+  .run-table td:nth-child(5):before {
+    display: block;
+    font-size: 9px;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+  .run-table td:nth-child(2):before {
+    content: "DISTANCE";
+  }
+  .run-table td:nth-child(3):before {
+    content: "TIME";
+  }
+  .run-table td:nth-child(4):before {
+    content: "PACE";
+  }
+  .run-table td:nth-child(5):before {
+    content: "HEART RATE";
+  }
+  .run-table .run-name {
+    white-space: normal;
+  }
+  .run-table .run-name strong {
+    font-size: 12px;
+  }
+  .analysis-panel .table-scroll {
+    max-height: 440px;
+  }
+}
+.load-more {
+  margin: 20px;
+}
