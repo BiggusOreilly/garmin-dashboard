@@ -43,6 +43,8 @@ import {
 } from "recharts";
 import "./style.css";
 import {
+  Validation,
+  Evidence,
   FitnessSnapshot,
   BandAnalysis,
   Fitness,
@@ -70,6 +72,8 @@ type Run = {
   elevation: number | null;
   calories: number | null;
   fiveK: number | null;
+  fiveKPerformance?: any;
+  fitImport?: any;
   zones: (number | null)[];
   trainingEffect: number | null;
   recoveryTime: number | null;
@@ -548,7 +552,11 @@ function App() {
   }
   async function load() {
     try {
-      setData(await request<Dashboard>("/api/dashboard"));
+      const next = await request<Dashboard>("/api/dashboard");
+      setData(next);
+      setSelected((prev) =>
+        prev ? next.activities.find((r) => r.id === prev.id) || prev : null,
+      );
       setError("");
     } catch (e) {
       setError((e as Error).message);
@@ -646,6 +654,11 @@ function App() {
       active = false;
     };
   }, [analysisFilters, data]);
+  const bestFive = runs
+    .filter((r) => r.fiveKPerformance?.eligible)
+    .sort(
+      (a, b) => a.fiveKPerformance.seconds - b.fiveKPerformance.seconds,
+    )[0]?.fiveKPerformance;
   const totalDistance = sum(runs.map((r) => r.distance)) / 1000,
     totalDuration = sum(runs.map((r) => r.duration));
   const paceRuns = runs.filter(
@@ -1515,19 +1528,13 @@ function App() {
                   foot="Within selected period"
                 />
                 <Kpi
-                  label="Recorded 5 km best"
-                  value={
-                    runs.some((r) => r.fiveK != null)
-                      ? duration(
-                          Math.min(
-                            ...runs
-                              .filter((r) => r.fiveK != null)
-                              .map((r) => r.fiveK!),
-                          ),
-                        )
-                      : "—"
+                  label="Credible 5K best"
+                  value={duration(bestFive?.seconds ?? null)}
+                  foot={
+                    bestFive
+                      ? bestFive.evidence + " · selected period"
+                      : "Insufficient reliable data"
                   }
-                  foot="Garmin fastest 5 km segment · selected period"
                 />
               </div>
               <div className="grid two">
@@ -1598,11 +1605,16 @@ function App() {
                 </Card>
                 <Card
                   title="Recent 5 km performances"
-                  sub="Garmin-reported fastest continuous 5 km segment, not an estimated race result"
+                  sub="Credible sensor-validated and Garmin-reported performances; flagged results excluded"
                 >
                   <Chart
-                    data={chartRuns}
-                    field="fiveK"
+                    data={chartRuns.map((r) => ({
+                      ...r,
+                      fiveKValue: r.fiveKPerformance?.eligible
+                        ? r.fiveKPerformance.seconds
+                        : null,
+                    }))}
+                    field="fiveKValue"
                     format={(v) => duration(v)}
                   />
                 </Card>
@@ -1850,6 +1862,26 @@ function App() {
                   </label>
                   <button
                     className="button"
+                    disabled={refreshing || data.meta.synthetic}
+                    onClick={async () => {
+                      try {
+                        await request("/api/revalidate/" + selected.id, {
+                          method: "POST",
+                          headers: { "X-Stride-Local": "1" },
+                        });
+                        setRefreshing(true);
+                        setMessage(
+                          "Revalidating this activity through the official Garmin client…",
+                        );
+                      } catch (e) {
+                        setMessage((e as Error).message);
+                      }
+                    }}
+                  >
+                    Revalidate activity data
+                  </button>
+                  <button
+                    className="button"
                     onClick={() => addComparison(selected.id)}
                   >
                     {comparison.includes(selected.id)
@@ -1866,10 +1898,29 @@ function App() {
                 <p className="caption">
                   {selected.quality?.issues?.join(" · ") ||
                     "Usable recorded sensor coverage"}{" "}
+                  {selected.fitImport?.reason
+                    ? " · " + selected.fitImport.reason
+                    : ""}
                   · Reliable movement coverage{" "}
                   {n((selected.quality?.coverage || 0) * 100)}%
                 </p>
               </Card>
+              {selected.fiveKPerformance && (
+                <div className="card analysis-panel">
+                  <div className="card-head">
+                    <div>
+                      <h3>
+                        5K performance ·{" "}
+                        {duration(selected.fiveKPerformance.seconds)}
+                      </h3>
+                      <p>
+                        <Evidence result={selected.fiveKPerformance} />
+                      </p>
+                    </div>
+                  </div>
+                  <Validation result={selected.fiveKPerformance} />
+                </div>
+              )}
               <Similar
                 run={selected}
                 runs={allRuns}

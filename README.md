@@ -34,7 +34,7 @@ The SQLite cache and credential files are protected plaintext, not encrypted by 
 
 ## Understanding availability
 
-The UI shows missing sensor values as unavailable, not zero or invented metrics. Heart-rate zones appear when Garmin provides them. Best-distance segments and records are also derived locally from reliable FIT distance streams; summary-only 5K results are kept in a separate evidence tier. FIT speed and HR are required for decoupling and comparable-band trends. Data / Settings explains formulas and reports checked/partial/not-checked endpoints. Checked means the endpoint responded successfully, not that your device recorded every field.
+The UI shows missing sensor values as unavailable, not zero or invented metrics. Heart-rate zones appear when Garmin provides them. Best-distance segments and records are also derived locally from reliable FIT distance streams; credible Garmin-reported 5K results participate alongside sensor-validated results, with explicit evidence badges. Flagged results remain excluded from PBs. FIT speed and HR are required for decoupling and comparable-band trends. Data / Settings explains formulas and reports checked/partial/not-checked endpoints. Checked means the endpoint responded successfully, not that your device recorded every field.
 
 First Mac sync still needs to verify live authentication, account-specific responses, original FIT decoding and the history Garmin actually makes available. Cloudflare prevented account testing in Codex Cloud. **No real Garmin data has been tested in this build.** This is a personal training tool, not medical advice or a diagnostic service.
 
@@ -70,3 +70,9 @@ Run Comparison, Aerobic Efficiency, HR at Pace, Fitness Trends, 5K Performance, 
 **Existing installation:** close the dashboard, pull the complete update including `companion/static/`, then double-click **Open Garmin Dashboard.command**. Migration is automatic and keeps the existing database and key. The first analysis may take longer while historical results are cached. Refresh normally with **Refresh Garmin Data.command**. No new production dependencies, Setup rerun, key re-entry, Node or npm are required. Full History is optional for revisiting old edits/missing FIT files.
 
 See `docs/PERFORMANCE.md` for methods, sample thresholds, limitations, migration details and Mac validation steps. This update uses synthetic test data only; actual Garmin field availability, sensor quality and macOS Finder behavior still need checking on your Mac.
+
+### Corrected 5K PBs and turnaround handling
+
+Credible Garmin `fastestSplit_5000` results now count toward your 5K PB even if FIT reconstruction is unavailable or inconclusive. The 5K page uses one evidence-labelled performance table; brief bounded turnarounds are tolerated without removing elapsed time. Diagnostic reasons remain available for excluded results.
+
+After pulling, close and reopen the dashboard: existing summaries are recalculated automatically. **No Setup rerun, database deletion, Full History refresh or API-key re-entry is needed.** Normal **Refresh Garmin Data.command** retries missing/incomplete FIT streams with cooldown. For one affected activity, open Run Detail → **Revalidate activity data** to force a fresh official FIT import immediately. Full History remains an optional, broader reimport. See `docs/FIVE_K.md`.

@@ -49,7 +49,7 @@ def main():
                         if history>date.today():raise SafeError('The earliest date cannot be in the future.')
                     store.db.execute("DELETE FROM metadata WHERE key LIKE 'cursor:%' OR key='activities_through'")
                     store.db.commit()
-                result=refresh(store,history_start=history,progress=lambda message:print(message,flush=True))
+                result=refresh(store,history_start=history,revalidate_all=args.action=='full-refresh',progress=lambda message:print(message,flush=True))
                 print(f"Refresh complete. {result['activities']} activities cached on this Mac. {result['warnings']} dataset warnings.")
                 print('Open Data / Settings in the dashboard to review availability and any partial imports.')
             finally:store.close()

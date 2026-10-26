@@ -27,7 +27,7 @@ def activity(item,detail=None):
     def field(a,b=None):return num(s.get(a)) if s.get(a) is not None else num(item.get(b or a))
     dist=field('distance');duration=field('duration')
     kind=d.get('activityTypeDTO') or item.get('activityType') or item.get('activityTypeDTO') or {}
-    return {'id':str(item.get('activityId',d.get('activityId'))),'name':item.get('activityName') or d.get('activityName') or 'Untitled activity','date':str(s.get('startTimeLocal') or item.get('startTimeLocal') or '')[:10],'start':s.get('startTimeLocal') or item.get('startTimeLocal'),'type':kind.get('typeKey','unknown'),'distance':dist,'duration':duration,'elapsed':field('elapsedDuration'),'moving':field('movingDuration'),'pace':pace(dist,duration),'hr':field('averageHR') or None,'maxHR':field('maxHR') or None,'cadence':field('averageRunCadence','averageRunningCadenceInStepsPerMinute') or None,'elevation':field('elevationGain'),'stride':field('avgStrideLength','averageStrideLength'),'calories':field('calories'),'fiveK':num(item.get('fastestSplit_5000')) or None,'zones':[num(item.get('hrTimeInZone_'+str(i))) for i in range(1,6)],'trainingEffect':field('trainingEffect'),'recoveryTime':field('recoveryTime')}
+    return {'id':str(item.get('activityId',d.get('activityId'))),'name':item.get('activityName') or d.get('activityName') or 'Untitled activity','date':str(s.get('startTimeLocal') or item.get('startTimeLocal') or '')[:10],'start':s.get('startTimeLocal') or item.get('startTimeLocal'),'type':kind.get('typeKey','unknown'),'distance':dist,'duration':duration,'elapsed':field('elapsedDuration'),'moving':field('movingDuration'),'pace':pace(dist,duration),'hr':field('averageHR') or None,'maxHR':field('maxHR') or None,'cadence':field('averageRunCadence','averageRunningCadenceInStepsPerMinute') or None,'elevation':field('elevationGain'),'stride':field('avgStrideLength','averageStrideLength'),'calories':field('calories'),'fiveK':field('fastestSplit_5000') or None,'zones':[num(item.get('hrTimeInZone_'+str(i))) for i in range(1,6)],'trainingEffect':field('trainingEffect'),'recoveryTime':field('recoveryTime')}
 
 def health(store):
     days={}
@@ -138,6 +138,7 @@ def dashboard(store):
     for run in activities:
         if 'running' in run['type']:
             run.update(derived(store,run))
+            run['fitImport']=store.meta('fit:'+run['id'])
             override=store.db.execute('SELECT classification FROM run_overrides WHERE id=?',(run['id'],)).fetchone()
             if override:
                 run['classification']={**run['classification'],'label':override[0],'reason':'Your local manual override. Automatic: '+run['classification']['automatic'],'confidence':'manual'}

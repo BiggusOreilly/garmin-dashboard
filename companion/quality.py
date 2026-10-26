@@ -65,3 +65,64 @@ def chart_series(series, limit=2400):
                           'speed':valid.get('speed'),'hr':valid.get('hr'),'cadence':valid.get('cadence'),
                           'elevation':number(raw.get('elevation'))})
     return {'records':projected,'laps':[], 'displaySampled':step>1,'originalSamples':len(records)}
+
+
+def distance_intervals(records):
+    """Segment-only gates; aerobic sampling remains deliberately stricter.
+
+    Cumulative travelled distance is authoritative; no position/heading is read.
+    Soft intervals can be tolerated only by a candidate's small total budget.
+    """
+    out=[]
+    for a,b in zip(records,records[1:]):
+        dt=b['t']-a['t'];dd=b['distance']-a['distance']
+        speed=dd/dt if dt>0 else None;recorded=number(b.get('speed'))
+        disagreement=abs(speed-recorded) if speed is not None and recorded is not None else 0
+        hard=None;soft=None
+        if dt<=0:hard='non-increasing recording time'
+        elif dd<0:hard='cumulative distance reset'
+        elif dt>10:hard=f'{dt:g} s recording gap'
+        elif speed>10:hard='severe GPS inconsistency (distance teleport)'
+        elif speed<.5:soft='near-stop'
+        elif recorded is not None and disagreement>max(1.5,recorded*.5):
+            if disagreement*dt>20:hard='sensor speed disagrees with plausible cumulative distance'
+            else:soft='GPS speed/distance wobble'
+        if hard is None and speed is not None and speed<.5:soft='near-stop'
+        out.append({'dt':dt,'distance':max(0,dd),'speed':speed,'disagreement':disagreement,
+                    'hard':hard,'soft':soft,'nearStop':speed is not None and 0<=speed<.5})
+    return out
+
+
+def distance_diagnostics(intervals):
+    bad=[r for r in intervals if r['hard'] or r['soft']]
+    longest=streak=0
+    for r in intervals:
+        streak=streak+max(0,r['dt']) if r['hard'] or r['soft'] else 0
+        longest=max(longest,streak)
+    return {'invalidIntervals':len(bad),'invalidDuration':sum(max(0,r['dt']) for r in bad),
+            'longestInvalidInterval':max((r['dt'] for r in bad),default=0),
+            'longestQuestionableSection':longest,
+            'minimumImpliedSpeed':min((r['speed'] for r in intervals if r['speed'] is not None),default=None),
+            'largestSpeedDistanceDisagreement':max((r['disagreement'] for r in intervals),default=0),
+            'samplingGapMaximum':max((r['dt'] for r in intervals),default=0),
+            'distanceDecreased':any(r['hard']=='cumulative distance reset' for r in intervals),
+            'nearStopOrTurnaroundLike':any(r['nearStop'] for r in bad),
+            'severe':any(r['hard'] in ('cumulative distance reset','non-increasing recording time') or (r['hard'] or '').startswith('severe GPS') for r in intervals),
+            'directionChangeInferred':False}
+
+
+def series_retry_reason(series, summary):
+    """Missing HR/cadence and ordinary stops alone do not warrant FIT downloads."""
+    records=(series or {}).get('records',[])
+    valid=[r for r in records if number(r.get('t')) is not None and number(r.get('distance')) is not None]
+    if len(valid)<3:return 'sensor stream unavailable or parsing produced no usable distance records'
+    span=max(r['t'] for r in valid)-min(r['t'] for r in valid)
+    if span<=0:return 'sensor timestamps unusable'
+    expected=number(summary.get('distance'))
+    distance=max(r['distance'] for r in valid)-min(r['distance'] for r in valid)
+    if expected and distance<expected*.95:return 'incomplete sensor recording (less than 95% of summary distance)'
+    if summary.get('fastestSplit_5000') and expected and expected>=5000 and distance<5000:return 'incomplete sensor recording for reported 5K (less than 5,000 m available)'
+    gaps=sum(max(0,b['t']-a['t']) for a,b in zip(valid,valid[1:]) if b['t']-a['t']>10)
+    if gaps>max(30,span*.1):return 'substantial missing sensor sections'
+    if distance_diagnostics(distance_intervals(valid))['severe']:return 'questionable cumulative distance; retry original FIT parsing'
+    return None

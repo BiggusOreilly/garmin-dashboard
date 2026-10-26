@@ -6,7 +6,7 @@ with sync_playwright() as p:
  page=b.new_page(viewport={'width':1440,'height':1000});external=[];errors=[]
  page.on('request',lambda r:external.append(r.url) if not r.url.startswith('http://127.0.0.1:8766/') else None)
  page.on('pageerror',lambda e:errors.append(str(e)))
- page.goto('http://127.0.0.1:8766');page.get_by_role('button',name='Refresh data',exact=True).wait_for()
+ page.goto('http://127.0.0.1:8766');page.get_by_role('button',name='Refresh data',exact=True).wait_for();page.wait_for_selector('.fixture-banner')
  assert page.get_by_role('button',name='Refresh data',exact=True).is_disabled()
  result.append('Synthetic refresh disabled')
  page.locator('nav').get_by_role('button',name='Runs').click()
