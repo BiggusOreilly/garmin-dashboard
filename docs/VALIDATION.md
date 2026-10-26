@@ -1,3 +1,17 @@
+# 5K evidence and turnaround fix · 26 October 2026
+
+- All **86 Python tests pass**, including the original 53 and new 5K/evidence/import regression tests. Known examples cover continuous 5K, brief near-stop/U-turn patterns at 1 s and 5 s sampling, a fractional 3.2 s slowdown, isolated speed/cumulative-distance wobble, sustained stop, distance reset, GPS teleport, 11 s/48 s gaps, impossible pace, missing HR/cadence, credible reported PB without FIT, faster result selection, rounding corroboration, automatic evidence upgrade/deduplication and legacy-cache invalidation.
+- FIT tests cover missing/empty/incomplete cache, nearly complete but short reported-5K streams, local-original reparse, failed-parse cooldown, explicit one-activity import, synthetic lockout, unchanged-healthy refresh reuse, Full History forcing, changed-summary downloads and preservation of a better cache/original after a bad response. Local revalidation keeps Host/Origin/custom-header checks and import locks.
+- TypeScript checks and Vite production build pass; prebuilt assets are included. No production dependencies were added. Python compilation and all four unchanged `.command` launchers' Bash syntax checks pass. Full History intentionally passes the new force-revalidation flag through the existing Python entry point.
+- Existing full-page, cross-navigation and interaction browser suites also passed on the updated production assets (empty and populated databases); the interaction test now waits for fixture loading before asserting refresh lockout.
+- The production 5K page was checked at **1440px and 390px** against seven explicitly synthetic activities across all three evidence tiers. The expected PB is **26:49 · Garmin reported**, beating a 29:52 sensor result. PB progression contains exactly 29:52, 29:30 and 26:49; flagged faster results remain excluded. There are exactly seven primary performance rows, with no duplicate Garmin/FIT entries. Badges, diagnostics, missing metrics as `—`, record tiles, fitness/running trends and source-run navigation pass. Screenshots were visually reviewed; no document overflow, runtime/console errors or external browser requests were observed.
+- Source/privacy regression: reviewed source and production assets; no real Garmin records, SQLite/DB files, FIT/GPS exports, credentials or JWTs were added. The official Garmin adapter, credential handling, `.gitignore`, launchers and production dependency declarations are unchanged. Temporary original downloads retain a `.zip` suffix covered by existing ignore protections. No live Garmin requests or personal data were used.
+- Analysis fingerprint version **7** automatically recalculates existing activities. SQLite schema stays at version 2; existing records and keys are preserved. Reopening alone updates PB eligibility for already-imported Garmin split values. Normal Refresh retries incomplete FIT data on cooldown; Run Detail → **Revalidate activity data** forces an immediate single-activity download. Setup and Full History are not required for the corrected PB logic.
+
+Methods, limits, retry lifecycle and Mac instructions are in `FIVE_K.md`. Actual device FIT sampling and original availability still require a local refresh on the user's Mac; Linux/synthetic validation does not exercise Finder/Gatekeeper or real Garmin authentication.
+
+---
+
 # Validation report · 25 October 2026
 
 ## Performance analytics update

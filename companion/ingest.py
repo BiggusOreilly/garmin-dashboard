@@ -1,7 +1,8 @@
 """Resumable, bounded official API ingestion. No live credentials needed on Cloud."""
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 from contextlib import contextmanager
 import json
+import hashlib
 import os
 import time
 from .garmin import Garmin, SafeError
@@ -68,7 +69,7 @@ def range_fetch(api,method,start,end):
             return range_fetch(api,method,start,mid.isoformat())+range_fetch(api,method,(mid+timedelta(days=1)).isoformat(),end)
         raise
 
-def refresh(store,api=None,today=None,history_start=None,progress=None):
+def refresh(store,api=None,today=None,history_start=None,progress=None,revalidate_all=False):
     progress=progress or (lambda message:None)
     today=today or date.today()
     own=api is None
@@ -103,15 +104,9 @@ def refresh(store,api=None,today=None,history_start=None,progress=None):
                     try:store.put('detail',aid,strip_location(api.call('get_activity',aid)))
                     except SafeError as e:warnings.append('Activity details: '+str(e))
                 typ=(item.get('activityType') or item.get('activityTypeDTO') or {}).get('typeKey','')
-                if 'running' in typ and (aid in activity_ids or store.get('series',aid) is None):
-                    try:
-                        blob=api.call('download_activity',aid)
-                        # Keep original only on Mac, behind 0700 directory; it may contain GPS.
-                        folder=store.directory/'fit';folder.mkdir(exist_ok=True,mode=0o700)
-                        path=folder/(aid+'.zip');path.write_bytes(blob);path.chmod(0o600)
-                        store.put('series',aid,parse_fit(blob))
+                if 'running' in typ and fit_retry_due(store,aid,item,force=revalidate_all):
+                    try:import_activity_fit(store,api,aid,item,force_download=revalidate_all)
                     except SafeError as e:warnings.append('Activity FIT: '+str(e))
-                    except Exception:warnings.append('An activity file could not be decoded. Summary data remains available.')
             dates=[str(x.get('startTimeLocal',''))[:10] for x in store.all('activities') if x.get('startTimeLocal')]
             earliest=history_start or (date.fromisoformat(min(dates)) if dates else today-timedelta(days=364))
             previous_start=store.meta('history_start')
@@ -163,5 +158,83 @@ def refresh(store,api=None,today=None,history_start=None,progress=None):
             return {'activities':len(store.all('activities')),'warnings':len(set(warnings))}
         except SafeError as e:
             store.meta('connection',{'state':'error','message':str(e),'checked':now()});raise
+        finally:
+            if own and api:api.close()
+
+
+def fit_source(item):
+    return hashlib.sha256(json.dumps(strip_location(item),sort_keys=True).encode()).hexdigest()
+
+
+def fit_retry_due(store, aid, item, force=False, current=None):
+    from .quality import series_retry_reason
+    if force:return True
+    status=store.meta('fit:'+aid) or {}
+    changed=status.get('source') is not None and status['source']!=fit_source(item)
+    if changed:return True
+    problem=series_retry_reason(store.get('series',aid),item)
+    if not problem and status.get('state')!='retry':
+        if not status:store.meta('fit:'+aid,{'state':'usable','source':fit_source(item),'attempts':0})
+        return False
+    due=status.get('nextRetry')
+    return not due or (current or datetime.now(timezone.utc))>=datetime.fromisoformat(due)
+
+
+def import_activity_fit(store, api, aid, item, force_download=False):
+    """Try existing local original first, then official download; retain better cache on failure."""
+    from .quality import series_retry_reason
+    if not str(aid).isdecimal():raise SafeError('Invalid activity identifier.')
+    previous=store.get('series',aid);old=store.meta('fit:'+aid) or {}
+    attempts=old.get('attempts',0)+1
+    stamp=datetime.now(timezone.utc)
+    status={'attempted':stamp.isoformat(),'source':fit_source(item),'attempts':attempts}
+    path=store.directory/'fit'/(aid+'.zip')
+    try:
+        parsed=None;blob=None
+        changed=old.get('source') is not None and old['source']!=fit_source(item)
+        if path.is_file() and not force_download and not changed:
+            try:parsed=parse_fit(path.read_bytes())
+            except Exception:parsed=None
+        if parsed is None or series_retry_reason(parsed,item):
+            blob=api.call('download_activity',aid)
+            try:parsed=parse_fit(blob)
+            except Exception:raise SafeError('The original FIT could not be parsed. Existing cached data was kept.') from None
+        if not isinstance(parsed,dict):raise SafeError('The original FIT could not be parsed. Existing cached data was kept.')
+        def coverage(s):
+            from .quality import number
+            return max((number(r.get('distance')) or 0 for r in (s or {}).get('records',[])),default=0)
+        # Never replace an existing better stream with an empty/truncated response.
+        new_problem=series_retry_reason(parsed,item)
+        keep_previous=previous is not None and new_problem is not None and (series_retry_reason(previous,item) is None or coverage(previous)>coverage(parsed))
+        chosen=previous if keep_previous else parsed
+        if not keep_previous:
+            store.put('series',aid,parsed)
+            if blob is not None:
+                path.parent.mkdir(exist_ok=True,mode=0o700)
+                temporary=path.with_name(aid+'.tmp.zip');temporary.write_bytes(blob);temporary.chmod(0o600);temporary.replace(path)
+        reason=new_problem if keep_previous else series_retry_reason(chosen,item)
+        status.update(state='retry' if reason else 'usable',reason=reason)
+    except SafeError:
+        status.update(state='retry',reason='FIT download or parsing failed; existing cache retained')
+        status['nextRetry']=(stamp+timedelta(days=min(30,2**min(attempts-1,5)))).isoformat()
+        store.meta('fit:'+aid,status)
+        raise
+    if status['state']=='retry':status['nextRetry']=(stamp+timedelta(days=min(30,2**min(attempts-1,5)))).isoformat()
+    else:status['attempts']=0
+    store.meta('fit:'+aid,status)
+    if status['state']=='retry':raise SafeError('FIT remains incomplete or unavailable. Summary results are preserved; automatic retry is scheduled.')
+    return status
+
+
+def revalidate_activity(store, aid, api=None):
+    if store.meta('synthetic'):raise SafeError('Synthetic fixture databases cannot connect to Garmin.')
+    item=store.get('activities',aid)
+    typ=(item or {}).get('activityType') or (item or {}).get('activityTypeDTO') or {}
+    if item is None or 'running' not in typ.get('typeKey',''):raise SafeError('Running activity not found.')
+    own=api is None
+    with sync_lock(store.directory):
+        try:
+            api=api or Garmin()
+            return import_activity_fit(store,api,aid,item,force_download=True)
         finally:
             if own and api:api.close()

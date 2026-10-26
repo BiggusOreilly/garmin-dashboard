@@ -9,7 +9,7 @@ from .store import Store
 from .analysis import dashboard,detail_metrics
 from .performance import CLASSES, similar, insights, volume, recovery_analysis
 from datetime import date
-from .ingest import refresh
+from .ingest import refresh, revalidate_activity
 from .garmin import SafeError
 
 STATIC=Path(__file__).parent/'static'
@@ -101,13 +101,24 @@ def serve(directory=None,port=8765):
                     finally:store.close()
                     return self.js({'saved':True})
                 except (ValueError,TypeError):return self.js({'error':'Invalid request.'},400)
-            if self.path!='/api/refresh':return self.js({'error':'Not found.'},404)
+            revalidate_id=self.path.rsplit('/',1)[-1] if self.path.startswith('/api/revalidate/') else None
+            if revalidate_id is not None:
+                check=Store(directory)
+                try:
+                    if not revalidate_id.isdecimal() or check.get('activities',revalidate_id) is None:return self.js({'error':'Run not found.'},404)
+                    if check.meta('synthetic'):return self.js({'error':'Synthetic fixtures cannot connect to Garmin.'},400)
+                finally:check.close()
+            elif self.path!='/api/refresh':return self.js({'error':'Not found.'},404)
             if not guard.acquire(blocking=False):return self.js({'error':'Refresh already running.'},409)
             state.update(running=True,message='Fetching your Garmin data locally…')
             def job():
                 store=Store(directory)
                 try:
                     if store.meta('synthetic'):raise SafeError('Test fixtures cannot connect to Garmin. Open the production dashboard to refresh.')
+                    if revalidate_id is not None:
+                        revalidate_activity(store,revalidate_id)
+                        state['message']='Activity data revalidated. Local performance analyses will update automatically.'
+                        return
                     result=refresh(store,progress=lambda message:state.update(message=message))
                     state['message']=f"Refresh complete: {result['activities']} activities. {result['warnings']} dataset warnings."
                 except SafeError as e:state['message']=str(e)

@@ -170,6 +170,12 @@ export function Plot({
                 borderRadius: 8,
               }}
               formatter={(v: any) => (format ? format(v) : fmt(v))}
+              labelFormatter={(label: any, entries: any) =>
+                String(label) +
+                (entries?.[0]?.payload?.evidence
+                  ? " · " + entries[0].payload.evidence
+                  : "")
+              }
             />
             <Legend wrapperStyle={{ fontSize: 11, paddingTop: 10 }} />
             {keys.map((k, i) => (
@@ -179,7 +185,29 @@ export function Plot({
                 name={k}
                 stroke={colors[i % colors.length]}
                 strokeWidth={i ? 1.6 : 2.2}
-                dot={data.length < 80 ? { r: 2 } : false}
+                dot={(props: any) => {
+                  const tier = k === "rolling" ? null : props.payload?.evidence;
+                  if (!tier && data.length >= 80) return <g key={props.key} />;
+                  return (
+                    <circle
+                      key={props.key}
+                      className="recharts-line-dot"
+                      cx={props.cx}
+                      cy={props.cy}
+                      r={tier ? 3 : 2}
+                      stroke={
+                        tier === "Garmin reported"
+                          ? colors[1]
+                          : colors[i % colors.length]
+                      }
+                      fill={
+                        tier === "Garmin reported"
+                          ? "#19221c"
+                          : colors[i % colors.length]
+                      }
+                    />
+                  );
+                }}
                 activeDot={{ r: 5 }}
                 connectNulls={false}
                 isAnimationActive={false}
@@ -455,7 +483,7 @@ export function Fitness({
     },
     { title: "Aerobic decoupling", mode: "drift", band: "", unit: "%", f: fmt },
     {
-      title: "Best 5 km segment",
+      title: "Best credible 5K performance",
       mode: "five",
       band: "",
       unit: "sec",
@@ -475,11 +503,12 @@ export function Fitness({
       : c.mode === "five"
         ? [...rs]
             .reverse()
-            .filter((r) => r.records?.["5 km"] && !r.records["5 km"].flag)
+            .filter((r) => r.fiveKPerformance?.eligible)
             .map((r) => ({
               date: r.date,
               id: r.id,
-              value: r.records["5 km"].seconds,
+              value: r.fiveKPerformance.seconds,
+              evidence: r.fiveKPerformance.evidence,
             }))
         : bandPoints(rs, c.mode, c.band);
   }
@@ -500,7 +529,11 @@ export function Fitness({
             <Panel
               key={c.title}
               title={c.title}
-              sub="Select a point to open the source run"
+              sub={
+                c.mode === "five"
+                  ? "Sensor validated + Garmin reported · select a point to open the run"
+                  : "Select a point to open the source run"
+              }
             >
               <div className="analysis-stats">
                 {[28, 84, 183].map((d) => {
@@ -570,6 +603,83 @@ export function Fitness({
     </>
   );
 }
+export function Evidence({ result }: { result: Point }) {
+  return (
+    <span
+      className={
+        "evidence-badge " +
+        (result.evidence === "Garmin reported"
+          ? "reported"
+          : result.evidence === "Flagged"
+            ? "flagged"
+            : "sensor")
+      }
+    >
+      {result.evidence || "Sensor validated"}
+    </span>
+  );
+}
+export function Validation({ result }: { result: Point }) {
+  const d = result.diagnostics || {};
+  return (
+    <div className="validation-note">
+      <span>{result.validation}</span>
+      {result.alternativeNote && (
+        <small className="block">{result.alternativeNote}</small>
+      )}
+      <details>
+        <summary>Validation details</summary>
+        <dl>
+          {Object.entries({
+            "Invalid intervals": d.invalidIntervals,
+            "Invalid duration (s)": d.invalidDuration,
+            "Longest invalid interval (s)": d.longestInvalidInterval,
+            "Longest questionable section (s)": d.longestQuestionableSection,
+            "Minimum implied speed (m/s)": d.minimumImpliedSpeed,
+            "Largest speed/distance disagreement (m/s)":
+              d.largestSpeedDistanceDisagreement,
+            "Maximum sample gap (s)": d.samplingGapMaximum,
+            "Cumulative distance reset":
+              d.distanceDecreased == null
+                ? "—"
+                : d.distanceDecreased
+                  ? "Yes"
+                  : "No",
+            "Near-stop / turnaround-like":
+              d.nearStopOrTurnaroundLike == null
+                ? "—"
+                : d.nearStopOrTurnaroundLike
+                  ? "Yes"
+                  : "No",
+          }).map(([k, v]) => (
+            <React.Fragment key={k}>
+              <dt>{k}</dt>
+              <dd>
+                {typeof v === "number"
+                  ? fmt(v, 2)
+                  : v == null
+                    ? "—"
+                    : String(v)}
+              </dd>
+            </React.Fragment>
+          ))}
+        </dl>
+        <p>
+          No GPS coordinates or heading are analysed. A turnaround-like slowdown
+          does not establish that a direction change occurred.
+        </p>
+        {result.reportedSeconds != null && (
+          <p>Garmin-reported time: {time(result.reportedSeconds)}</p>
+        )}
+        {result.terrain && (
+          <p>
+            {result.terrain} · {result.precision}
+          </p>
+        )}
+      </details>
+    </div>
+  );
+}
 export function Records({
   data,
   runs,
@@ -586,9 +696,9 @@ export function Records({
   const [distance, setDistance] = useState("5 km");
   const progression = data.records || {};
   const events = progression[five ? "5 km" : distance] || [];
-  const qualifying = runs.filter((r) => r.records?.["5 km"]);
+  const qualifying = runs.filter((r) => r.fiveKPerformance);
   const recent = qualifying.filter(
-    (r) => r.date >= shift(end, -27) && !r.records["5 km"].flag,
+    (r) => r.date >= shift(end, -27) && r.fiveKPerformance.eligible,
   );
   return (
     <>
@@ -596,24 +706,40 @@ export function Records({
         <div className="analysis-stats featured">
           <Stat
             label="Current imported PB"
-            value={time((progression["5 km"] || []).at(-1)?.seconds)}
-            note="Reliable unflagged segments · all imported history"
+            value={
+              (progression["5 km"] || []).at(-1)
+                ? time(progression["5 km"].at(-1).seconds) +
+                  " · " +
+                  progression["5 km"].at(-1).evidence
+                : "—"
+            }
+            note="Best credible sensor-validated or Garmin-reported result · all imported history"
           />
           <Stat
             label="Recent best"
             value={
               recent.length
                 ? time(
-                    Math.min(...recent.map((r) => r.records["5 km"].seconds)),
+                    Math.min(...recent.map((r) => r.fiveKPerformance.seconds)),
                   )
                 : "—"
             }
-            note="Last 28 days"
+            note={
+              "Last 28 days" +
+              (recent.length
+                ? " · " +
+                  recent.reduce((a, b) =>
+                    a.fiveKPerformance.seconds <= b.fiveKPerformance.seconds
+                      ? a
+                      : b,
+                  ).fiveKPerformance.evidence
+                : "")
+            }
           />
           <Stat
-            label="Valid 5 km performances"
+            label="Credible 5K performances"
             value={String(
-              qualifying.filter((r) => !r.records["5 km"].flag).length,
+              qualifying.filter((r) => r.fiveKPerformance.eligible).length,
             )}
             note="Within global filters"
           />
@@ -643,6 +769,7 @@ export function Records({
                         : "—"
                       : time(p?.seconds)}
                   </strong>
+                  {label === "5 km" && p && <Evidence result={p} />}
                   <small>
                     {p ? `${p.date} · ${p.name}` : "Insufficient reliable data"}
                   </small>
@@ -668,7 +795,7 @@ export function Records({
       )}
       <Panel
         title={five ? "5K PB progression" : "Record progression history"}
-        sub="Each event is a new best in imported history · downhill >1% excluded"
+        sub="Each event is a new credible best in imported history · sensor validated and Garmin reported both qualify; flagged results excluded"
       >
         {!five && (
           <label className="analysis-controls">
@@ -705,6 +832,7 @@ export function Records({
                 <strong>
                   {p.seconds ? time(p.seconds) : fmt(p.distance / 1000) + " km"}
                 </strong>
+                <small>{p.evidence && <Evidence result={p} />}</small>
                 <small>
                   {p.improvement == null
                     ? "First imported best"
@@ -719,17 +847,18 @@ export function Records({
         <>
           <Panel
             title="5K fitness trend"
-            sub="Best segment per run + 28-day rolling mean; incidental efforts are not race predictions"
+            sub="Best credible result per run + 28-day mean · filled dots: sensor validated; outlined dots: Garmin reported"
           >
             <Plot
               data={rolling(
                 [...qualifying]
                   .reverse()
-                  .filter((r) => !r.records["5 km"].flag)
+                  .filter((r) => r.fiveKPerformance.eligible)
                   .map((r) => ({
                     id: r.id,
                     date: r.date,
-                    value: r.records["5 km"].seconds,
+                    value: r.fiveKPerformance.seconds,
+                    evidence: r.fiveKPerformance.evidence,
                   })),
               )}
               keys={["value", "rolling"]}
@@ -739,21 +868,23 @@ export function Records({
           </Panel>
           <Panel
             title="5K performances"
-            sub="Whole 5K activities are identified by distance (4.95–5.10 km); title cues identify possible races/time trials"
+            sub="One best result per activity · Garmin-reported results remain eligible when FIT validation is inconclusive. Flagged results are visible but excluded from PBs."
           >
             <div className="table-scroll">
-              <table>
+              <table className="five-k-table">
                 <thead>
                   <tr>
                     {[
-                      "Run / source",
-                      "5 km",
-                      "HR avg / max",
+                      "Date / source run",
+                      "5K time",
+                      "Evidence",
+                      "Avg / max HR",
                       "Cadence",
+                      "Splits",
                       "Split CV",
                       "Second half",
                       "Final km",
-                      "Quality",
+                      "Quality note",
                     ].map((x) => (
                       <th key={x}>{x}</th>
                     ))}
@@ -761,35 +892,39 @@ export function Records({
                 </thead>
                 <tbody>
                   {qualifying.map((r) => {
-                    const p = r.records["5 km"];
+                    const p = r.fiveKPerformance;
                     return (
-                      <tr key={r.id} onClick={() => open(r.id)}>
+                      <tr key={r.id}>
                         <td>
                           <button
                             className="text-button"
                             onClick={() => open(r.id)}
                           >
-                            {r.date} · {r.name}
+                            {r.date} · {r.name} →
                           </button>
-                          <small className="block">
-                            {r.classification?.label === "Race / time trial"
-                              ? "Race / time-trial title cue"
-                              : r.distance >= 4950 && r.distance <= 5100
-                                ? "Recorded 5K activity"
-                                : "Incidental segment"}
-                          </small>
                         </td>
                         <td>{time(p.seconds)}</td>
+                        <td>
+                          <Evidence result={p} />
+                        </td>
                         <td>
                           {fmt(p.hr)} / {fmt(p.maxHR)}
                         </td>
                         <td>{fmt(p.cadence)}</td>
-                        <td>{fmt(p.splitCV)}%</td>
-                        <td>{fmt(p.halfChange)}%</td>
+                        <td>
+                          {p.splits?.length
+                            ? p.splits.map((v: number) => pace(v)).join(" · ")
+                            : "—"}
+                        </td>
+                        <td>
+                          {p.splitCV == null ? "—" : fmt(p.splitCV) + "%"}
+                        </td>
+                        <td>
+                          {p.halfChange == null ? "—" : fmt(p.halfChange) + "%"}
+                        </td>
                         <td>{pace(p.finalKm)}</td>
                         <td>
-                          {p.flag || p.terrain}
-                          <small className="block">{p.precision}</small>
+                          <Validation result={p} />
                         </td>
                       </tr>
                     );
@@ -798,57 +933,24 @@ export function Records({
               </table>
             </div>
             {!qualifying.length && <Empty />}
+            <p className="caption">
+              Summary-only results have no segment-specific sensor metrics. A
+              near-5K activity without an explicit Garmin 5K split is not
+              treated as an exact 5K result. Tier colours describe evidence, not
+              effort or fitness.
+            </p>
           </Panel>
         </>
       )}
-      {five && (
-        <Panel
-          title="Garmin-reported and summary-only 5K results"
-          sub="Separate evidence tier; not added to sensor-validated PB progression"
-        >
-          <div className="evidence-list">
-            {runs
-              .filter(
-                (r) =>
-                  (r.fiveK || (r.distance >= 4950 && r.distance <= 5100)) &&
-                  !r.records?.["5 km"],
-              )
-              .map((r) => (
-                <button key={r.id} onClick={() => open(r.id)}>
-                  <span>
-                    {r.date} · {r.name}
-                    <small className="block">
-                      {r.fiveK
-                        ? "Garmin-reported segment; underlying stream not validated"
-                        : "Recorded activity near 5K; distance not standardised"}
-                    </small>
-                  </span>
-                  <strong>{time(r.fiveK || r.duration)}</strong>
-                  <small>
-                    HR {fmt(r.hr)} / max {fmt(r.maxHR)} · cadence{" "}
-                    {fmt(r.cadence)} →
-                  </small>
-                </button>
-              ))}
-          </div>
-          {!runs.some(
-            (r) =>
-              (r.fiveK || (r.distance >= 4950 && r.distance <= 5100)) &&
-              !r.records?.["5 km"],
-          ) && (
-            <p className="caption">
-              No additional summary-only performances in these dates.
-            </p>
-          )}
-        </Panel>
-      )}
       <p className="caption">
-        Segment ends are linearly interpolated from cumulative FIT distance.
-        Gaps &gt;10s, pauses, distance resets and implausible movement
-        disqualify candidates. Net downhill &gt;1% is flagged and excluded from
-        PBs. Elevation availability is disclosed. Very short records are omitted
-        with coarse sampling. Fastest average pace for each distance is segment
-        time ÷ distance.
+        FIT results use cumulative travelled distance and full elapsed time. For
+        5K only, up to three isolated questionable episodes can be tolerated:
+        ≤12 seconds total and ≤1% of elapsed time, ≤8 consecutive seconds, ≤30
+        metres of affected distance. Individual GPS disagreements must be ≤20
+        metres; sampling gaps over 10 seconds, distance resets and teleports
+        remain rejected. Garmin-reported results are retained when local
+        validation is unavailable or inconclusive. Flagged performances remain
+        excluded. No coordinates or inferred direction are used.
       </p>
     </>
   );
@@ -1796,6 +1898,11 @@ export function FitnessSnapshot({
   end: string;
   go: (s: string) => void;
 }) {
+  const bestFive = runs
+    .filter((r) => r.fiveKPerformance?.eligible)
+    .sort(
+      (a, b) => a.fiveKPerformance.seconds - b.fiveKPerformance.seconds,
+    )[0]?.fiveKPerformance;
   const choices = [140, 145, 150, 155, 160];
   const band = choices.sort(
     (a, b) =>
@@ -1844,13 +1951,18 @@ export function FitnessSnapshot({
           </strong>
         </button>
         <button onClick={() => go("5K Performance")}>
-          <span>Best 5 km in period</span>
+          <span>
+            Best credible 5K in period
+            <small className="block">
+              {bestFive?.evidence || "No credible result"}
+            </small>
+          </span>
           <strong>
             {time(
               Math.min(
                 ...runs
-                  .filter((r) => r.records?.["5 km"] && !r.records["5 km"].flag)
-                  .map((r) => r.records["5 km"].seconds),
+                  .filter((r) => r.fiveKPerformance?.eligible)
+                  .map((r) => r.fiveKPerformance.seconds),
               ) || null,
             )}{" "}
             →

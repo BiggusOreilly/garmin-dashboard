@@ -69,3 +69,15 @@ class ServerTests(unittest.TestCase):
             with post({'classification':None},{'X-Stride-Local':'1'}) as r:self.assertTrue(json.load(r)['saved'])
         finally:
             s.db.execute("DELETE FROM records WHERE id='123'");s.db.execute("DELETE FROM derived_runs WHERE id='123'");s.db.execute("DELETE FROM run_overrides WHERE id='123'");s.db.commit();s.close()
+
+    def test_revalidation_is_protected_and_synthetic_never_connects(self):
+        from companion.store import Store
+        for headers in [{},{'Origin':'https://attacker.example','X-Stride-Local':'1'}]:
+            with self.assertRaises(urllib.error.HTTPError) as c:self.fetch('/api/revalidate/123',headers,method='POST')
+            self.assertEqual(c.exception.code,403)
+        s=Store(self.tmp.name);s.put('activities','124',{'activityId':124,'activityType':{'typeKey':'running'}});s.meta('synthetic',True)
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as c:self.fetch('/api/revalidate/124',{'X-Stride-Local':'1'},method='POST')
+            self.assertEqual(c.exception.code,400)
+        finally:
+            s.meta('synthetic',False);s.db.execute("DELETE FROM records WHERE id='124'");s.db.commit();s.close()

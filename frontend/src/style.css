@@ -2039,3 +2039,139 @@ input[type="checkbox"] {
 .load-more {
   margin: 20px;
 }
+.evidence-badge {
+  display: inline-block;
+  border: 1px solid #58784c;
+  background: #263422;
+  color: #cae8b6;
+  border-radius: 5px;
+  padding: 4px 7px;
+  font-size: 10px;
+  line-height: 1.5;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.evidence-badge.reported {
+  border-color: #4e7180;
+  background: #1c2a30;
+  color: #a9d3e2;
+}
+.evidence-badge.flagged {
+  border-color: #80634c;
+  background: #30271f;
+  color: #dfbd99;
+}
+.five-k-table td {
+  vertical-align: top;
+}
+.five-k-table td:last-child {
+  min-width: 250px;
+  max-width: 350px;
+  white-space: normal;
+}
+.validation-note {
+  font-size: 11px;
+  line-height: 1.8;
+  color: #b7c6b4;
+}
+.validation-note details {
+  margin-top: 10px;
+  color: var(--muted);
+}
+.validation-note summary {
+  cursor: pointer;
+  color: #a6c891;
+}
+.validation-note dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 15px;
+  font-size: 10px;
+  margin: 10px 0;
+}
+.validation-note dt,
+.validation-note dd {
+  margin: 0;
+}
+.analysis-stats.featured .analysis-stat strong {
+  font-size: 19px;
+  line-height: 1.5;
+}
+@media (max-width: 620px) {
+  .five-k-table,
+  .five-k-table tbody {
+    display: block;
+    white-space: normal;
+    width: 100%;
+  }
+  .five-k-table thead {
+    display: none;
+  }
+  .five-k-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 14px;
+    padding: 18px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .five-k-table td {
+    padding: 0;
+    border: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .five-k-table td:first-child,
+  .five-k-table td:nth-child(6),
+  .five-k-table td:last-child {
+    grid-column: 1/-1;
+  }
+  .five-k-table td:first-child {
+    padding: 0 0 5px;
+  }
+  .five-k-table td:first-child button {
+    text-align: left;
+    white-space: normal;
+    line-height: 1.7;
+  }
+  .five-k-table td:last-child {
+    min-width: 0;
+    max-width: none;
+    padding-top: 5px;
+  }
+  .five-k-table td:not(:first-child):before {
+    display: block;
+    font-size: 9px;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+  .five-k-table td:nth-child(2):before {
+    content: "5K TIME";
+  }
+  .five-k-table td:nth-child(3):before {
+    content: "EVIDENCE";
+  }
+  .five-k-table td:nth-child(4):before {
+    content: "AVG / MAX HR";
+  }
+  .five-k-table td:nth-child(5):before {
+    content: "CADENCE";
+  }
+  .five-k-table td:nth-child(6):before {
+    content: "SPLITS";
+  }
+  .five-k-table td:nth-child(7):before {
+    content: "SPLIT CV";
+  }
+  .five-k-table td:nth-child(8):before {
+    content: "SECOND HALF";
+  }
+  .five-k-table td:nth-child(9):before {
+    content: "FINAL KM";
+  }
+  .five-k-table td:nth-child(10):before {
+    content: "QUALITY NOTE";
+  }
+  .five-k-table .validation-note {
+    font-size: 10px;
+  }
+}
