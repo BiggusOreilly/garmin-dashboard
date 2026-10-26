@@ -3,10 +3,12 @@ import json
 import mimetypes
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 from threading import Thread, Lock
 from .store import Store
 from .analysis import dashboard,detail_metrics
+from .performance import CLASSES, similar, insights, volume, recovery_analysis
+from datetime import date
 from .ingest import refresh
 from .garmin import SafeError
 
@@ -38,12 +40,38 @@ def serve(directory=None,port=8765):
                 store=Store(directory)
                 try:
                     if path=='/api/dashboard':return self.js(dashboard(store))
+                    if path.startswith('/api/similar/'):
+                        aid=path.rsplit('/',1)[-1]
+                        data=dashboard(store);runs=[r for r in data['activities'] if 'running' in r['type']]
+                        run=next((r for r in runs if r['id']==aid),None)
+                        if run is None:return self.js({'error':'Run not found.'},404)
+                        return self.js(similar(run,runs))
+                    if path=='/api/analysis':
+                        query=parse_qs(urlparse(self.path).query)
+                        def arg(k,default):return query.get(k,[default])[0]
+                        try:
+                            end=date.fromisoformat(arg('end',date.today().isoformat())).isoformat()
+                            start=date.fromisoformat(arg('start','1900-01-01')).isoformat()
+                            lag=int(arg('lag','1'));metric=arg('metric','hrv');against=arg('against','performance')
+                            minimum=float(arg('minKm','0'));maximum=float(arg('maxKm','10000'));category=arg('classification','')
+                            if start>end or lag not in (0,1,2) or metric not in ('hrv','rhr','sleep','sleepScore','bodyBattery','stress') or against not in ('performance','volume') or category and category not in CLASSES:raise ValueError()
+                        except ValueError:return self.js({'error':'Invalid analysis filters.'},400)
+                        data=dashboard(store)
+                        runs=[r for r in data['activities'] if 'running' in r['type'] and r['date']<=end and (not category or r['classification']['label']==category) and minimum<=(r['distance'] or 0)/1000<=maximum]
+                        days=[d for d in data['health'] if d['date']<=end]
+                        training=volume(runs,end)
+                        recovery=recovery_analysis(runs,days,training,metric,against,lag)
+                        recovery['points']=[p for p in recovery['points'] if p['date']>=start]
+                        from .performance import correlation
+                        recovery['association']=correlation([(p['x'],p[against]) for p in recovery['points'] if p['x'] is not None and p[against] is not None])
+                        return self.js({'training':training,'insights':insights(runs,days,training,end),'recovery':recovery})
                     if path.startswith('/api/run/'):
                         aid=path.rsplit('/',1)[-1]
                         if not aid.isdecimal() or store.get('activities',aid) is None:return self.js({'error':'Run not found.'},404)
                         series=store.get('series',aid) or {'records':[],'laps':[]}
                         # Only the coordinate-free, explicitly projected series is returned.
-                        return self.js({'series':series,'analysis':detail_metrics(series)})
+                        from .quality import chart_series
+                        return self.js({'series':chart_series(series),'analysis':detail_metrics(series)})
                     return self.js({'error':'Not found.'},404)
                 except Exception:return self.js({'error':'Local data could not be read. Please restart the dashboard.'},500)
                 finally:store.close()
@@ -55,6 +83,24 @@ def serve(directory=None,port=8765):
             self.send(200,file.read_bytes(),mimetypes.guess_type(file.name)[0] or 'application/octet-stream')
         def do_POST(self):
             if not self.safe(True):return self.js({'error':'Local access only.'},403)
+            if self.path.startswith('/api/classification/'):
+                aid=self.path.rsplit('/',1)[-1]
+                try:
+                    length=int(self.headers.get('Content-Length','0'))
+                    if not 0<length<=1024:return self.js({'error':'Invalid request.'},400)
+                    payload=json.loads(self.rfile.read(length))
+                    if not isinstance(payload,dict):return self.js({'error':'Invalid request.'},400)
+                    label=payload.get('classification')
+                    if label not in CLASSES and label is not None:return self.js({'error':'Unknown classification.'},400)
+                    store=Store(directory)
+                    try:
+                        if not aid.isdecimal() or store.get('activities',aid) is None:return self.js({'error':'Run not found.'},404)
+                        if label is None:store.db.execute('DELETE FROM run_overrides WHERE id=?',(aid,))
+                        else:store.db.execute('INSERT OR REPLACE INTO run_overrides VALUES(?,?)',(aid,label))
+                        store.db.commit()
+                    finally:store.close()
+                    return self.js({'saved':True})
+                except (ValueError,TypeError):return self.js({'error':'Invalid request.'},400)
             if self.path!='/api/refresh':return self.js({'error':'Not found.'},404)
             if not guard.acquire(blocking=False):return self.js({'error':'Refresh already running.'},409)
             state.update(running=True,message='Fetching your Garmin data locally…')

@@ -34,7 +34,7 @@ The SQLite cache and credential files are protected plaintext, not encrypted by 
 
 ## Understanding availability
 
-The UI shows missing sensor values as unavailable, not zero or invented metrics. Heart-rate zones and fastest 5 km segments appear only when Garmin provides them. FIT speed and HR are required for decoupling and comparable-band trends. Data / Settings explains formulas and reports checked/partial/not-checked endpoints. Checked means the endpoint responded successfully, not that your device recorded every field.
+The UI shows missing sensor values as unavailable, not zero or invented metrics. Heart-rate zones appear when Garmin provides them. Best-distance segments and records are also derived locally from reliable FIT distance streams; summary-only 5K results are kept in a separate evidence tier. FIT speed and HR are required for decoupling and comparable-band trends. Data / Settings explains formulas and reports checked/partial/not-checked endpoints. Checked means the endpoint responded successfully, not that your device recorded every field.
 
 First Mac sync still needs to verify live authentication, account-specific responses, original FIT decoding and the history Garmin actually makes available. Cloudflare prevented account testing in Codex Cloud. **No real Garmin data has been tested in this build.** This is a personal training tool, not medical advice or a diagnostic service.
 
@@ -62,3 +62,11 @@ python -m companion serve --data-dir /tmp/stride-synthetic-test --port 8766
 This separate test database has a persistent synthetic-data banner and cannot sync from Garmin. Never point test seeding at your real data folder. Production startup defaults to `data/` and never loads fixtures. `npm run build` compiles the dashboard into `companion/static/`; commit those assets along with source so Mac users need only Python.
 
 See [architecture and endpoint coverage](docs/ARCHITECTURE.md) and [validation report](docs/VALIDATION.md) for implementation details and limitations.
+
+## Performance analytics update
+
+Run Comparison, Aerobic Efficiency, HR at Pace, Fitness Trends, 5K Performance, Personal Records, Training Load, Recovery overlays, a month/week calendar and deterministic observations now extend the original dashboard. Run classifications explain their evidence and allow local overrides. Global dates/distance/classification filters, source-run links and mobile activity cards connect the views.
+
+**Existing installation:** close the dashboard, pull the complete update including `companion/static/`, then double-click **Open Garmin Dashboard.command**. Migration is automatic and keeps the existing database and key. The first analysis may take longer while historical results are cached. Refresh normally with **Refresh Garmin Data.command**. No new production dependencies, Setup rerun, key re-entry, Node or npm are required. Full History is optional for revisiting old edits/missing FIT files.
+
+See `docs/PERFORMANCE.md` for methods, sample thresholds, limitations, migration details and Mac validation steps. This update uses synthetic test data only; actual Garmin field availability, sensor quality and macOS Finder behavior still need checking on your Mac.

@@ -20,6 +20,10 @@ class Store:
         self.db.executescript('''
         CREATE TABLE IF NOT EXISTS records(dataset TEXT, id TEXT, payload TEXT NOT NULL, fetched TEXT NOT NULL, PRIMARY KEY(dataset,id));
         CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS derived_runs(id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, payload TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS run_overrides(id TEXT PRIMARY KEY, classification TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS records_dataset_fetched ON records(dataset,fetched,id);
+        PRAGMA user_version=2;
         ''')
     def put(self, dataset, key, payload):
         self.db.execute('INSERT OR REPLACE INTO records VALUES(?,?,?,?)',(dataset,str(key),json.dumps(payload,allow_nan=False),now()))

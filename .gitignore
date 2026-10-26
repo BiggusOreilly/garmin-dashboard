@@ -24,3 +24,14 @@ test-results/
 connect-personal-api-key
 connect-personal-api-bearer-token.json
 work/
+
+# Additional local exports, databases and credential backups
+*.db
+*.db-*
+*.gpx
+*.tcx
+*.har
+*.pem
+*.key
+connect-personal-api-key*
+connect-personal-api-bearer-token*

@@ -1,4 +1,25 @@
-# Validation report · 24 October 2026
+# Validation report · 25 October 2026
+
+## Performance analytics update
+
+- **53 Python tests passed**, including all pre-existing tests and new known-example tests for aerobic decoupling/components, warm-up/transient handling, pace-at-HR, HR-at-pace, missing HR/cadence, partial recordings, pauses, impossible distance increments, segment/record/PB progression, downhill flags, sampling precision, matching, classifications, rolling volume/rest days, abrupt changes, lagged recovery correlations and evidence-gated observations.
+- **TypeScript checks and Vite production build passed.** Updated production assets are included; no Mac Node/npm dependency. Production package and Python requirement files are unchanged.
+- **Browser QA passed on production assets at 1440×1000 and 390×1000:** Overview, Runs, Run Detail, Run Comparison, Aerobic Efficiency, HR at Pace, Fitness Trends, 5K Performance, Personal Records, Training Load, Recovery, Calendar, Observations and Settings. No document overflow, browser runtime/console errors or external browser requests were observed. Major feature screenshots were visually reviewed. Mobile history uses activity cards, comparison tables use internal scrolling/sticky metric labels, and long evidence tables are bounded. Additional wellness charts are expandable.
+- **Interactions passed:** comparison selection capped at five, removal/clear, similar-pair addition, comparison legends → run, 5K chart point → run, record → run, calendar → run, band evidence → run, observation → supporting view, global filter persistence, activity search/distance filters, synthetic-refresh lockout, classification override/reset, calendar month/week controls, date periods, detail time/distance switching and synchronised hover tooltips.
+- **Migration passed against an existing-style records/metadata database.** Sentinel metadata survives additive schema version 2; derived results reuse the cache and invalidate on changed sensor data. Local overrides are validated, parameterised and protected by the same Host/Origin/custom-header rules as refresh. Invalid analysis parameters are rejected.
+- **Synthetic scale check:** 1,000 generated one-hour runs across approximately 5.5 years; first analysis 28.782 s, warm dashboard 0.112 s, JSON summary payload 4.67 MB. No high-frequency streams appear in the dashboard payload. These measurements describe this Linux test machine, not a performance guarantee on the Mac. First opening after upgrade may take longer while history is cached; subsequent work reuses derived data.
+- **All four launchers pass Bash syntax checks**, retain executable mode 100755 and are unchanged. Existing setup/refresh/full-history/open Python entry points are retained. Garmin ingestion, official adapter, credential handling and production dependencies are unchanged.
+- **Privacy regression passed:** reviewed current source and assets; no tracked SQLite/DB/FIT/GPS exports, credential/environment files or JWTs. Historical Git object names contain no local data/credential/export artifacts. New source uses invented fixtures only; benchmark databases and browser captures remain ignored/outside the repository. Compiled assets contain application code, not personal data. Existing ignore rules are preserved and extended for DB/GPS/network exports and credential backups. Browser requests are same-origin only, no telemetry or remote assets were introduced, and only the existing official read-only Garmin client handles Garmin access.
+
+## Remaining local validation
+
+No live Garmin API, key, athlete data or private database was accessed. After pulling, close/reopen using **Open Garmin Dashboard.command**, allow the automatic migration/cache build, and refresh normally. Setup does not need rerunning; keep the existing database and key. Check real FIT availability, original sampling/pauses/elevation, optional stride/elapsed fields, zone-based classifications and wellness coverage against your own recordings. Garmin does not certify inferred race intent, route equivalence or GPS accuracy; those limitations and unavailable data are visible in the app. Native macOS Finder/Gatekeeper behavior still needs the user's Mac.
+
+Methods and exact thresholds are documented in `PERFORMANCE.md` and Data / Settings. Developer browser QA additionally uses `tests/browser_expanded.py` and `tests/browser_links.py`; Playwright/Chromium are development tools only.
+
+---
+
+# Previous validation · 24 October 2026
 
 ## Completed in Codex Cloud
 
