@@ -7,7 +7,7 @@ from statistics import mean, pstdev
 import json
 from .quality import clean_intervals, weighted, report, number, distance_intervals, distance_diagnostics
 
-VERSION = 7
+VERSION = 8
 DISTANCES = {'400 m':400, '1 km':1000, '1 mile':1609.344, '3 km':3000, '5 km':5000, '10 km':10000}
 CLASSES = ['Recovery','Easy','Aerobic','Long','Steady','Tempo','Threshold','Intervals','VO2 / high intensity','Race / time trial','Mixed / unclassified']
 
@@ -36,20 +36,23 @@ def bands(records):
     return output
 
 
-def segments(records, diagnostics=None):
+def segments(records, diagnostics=None, by_distance=None):
     """Sample-start search using cumulative travelled distance and full elapsed time.
-    Only 5K candidates get bounded near-stop/wobble tolerance; shorter PRs remain strict.
-    Diagnostics describe the best rejected 5K candidate, or its accepted replacement.
+    1 km through 10 km candidates use bounded, distance-aware near-stop/wobble tolerance; 400 m remains strict.
+    Per-distance diagnostics describe the best rejected candidate or its accepted replacement.
     """
     diagnostics = diagnostics if diagnostics is not None else {}
+    by_distance = by_distance if by_distance is not None else {}
     rs = [r for r in records if number(r.get('t')) is not None and number(r.get('distance')) is not None]
     if len(rs)<3:
         diagnostics.update(reason='sensor stream unavailable' if not records else 'too few usable distance samples', severe=False, diagnostics={})
+        for label in DISTANCES:by_distance[label]=dict(diagnostics)
         return {}
     ds=[r['distance'] for r in rs];ts=[r['t'] for r in rs]
     checks=distance_intervals(rs);whole=distance_diagnostics(checks)
     if any(b<a for a,b in zip(ds,ds[1:])) or any(b<=a for a,b in zip(ts,ts[1:])):
         diagnostics.update(reason='cumulative distance reset' if whole['distanceDecreased'] else 'non-increasing recording time',severe=True,diagnostics=whole)
+        for label in DISTANCES:by_distance[label]=dict(diagnostics)
         return {}
     bad=[0];hard=[0];soft_time=[0];soft_distance=[0];soft_indices=[]
     for k,c in enumerate(checks):
@@ -67,10 +70,13 @@ def segments(records, diagnostics=None):
         cad=number(b.get('cadence')); goodcad=cad is not None and 80<=cad<=240
         hr_sum.append(hr_sum[-1]+(hr*dt if goodhr else 0)); hr_secs.append(hr_secs[-1]+(dt if goodhr else 0))
         cad_sum.append(cad_sum[-1]+(cad*dt if goodcad else 0)); cad_secs.append(cad_secs[-1]+(dt if goodcad else 0))
-    output={};rejected_seconds=None
+    output={}
     for label, length in DISTANCES.items():
         # 400m needs <=2s recording; smart-recorded short segments are omitted.
-        if length==400 and maxgap>2: continue
+        current={};rejected_seconds=None
+        if length==400 and maxgap>2:
+            by_distance[label]={'reason':'Recording too coarse for a 400 m record','severe':False,'diagnostics':whole}
+            continue
         best=None
         for i,a in enumerate(rs[:-1]):
             target=ds[i]+length
@@ -81,23 +87,23 @@ def segments(records, diagnostics=None):
             finish=ts[j-1]+fraction*(ts[j]-ts[j-1]); seconds=finish-ts[i]
             count=bad[j]-bad[i];tolerated=soft_time[j]-soft_time[i]
             invalid=bool(hard[j]-hard[i] or count)
-            if label=='5 km' and not hard[j]-hard[i]:
+            if length>=1000 and not hard[j]-hard[i]:
                 indices=soft_indices[bisect_left(soft_indices,i):bisect_left(soft_indices,j)]
                 longest=streak=0;last=-2;episodes=0
                 for k in indices:
                     if k!=last+1:episodes+=1
                     streak=checks[k]['dt']+(streak if k==last+1 else 0);last=k;longest=max(longest,streak)
-                invalid=episodes>3 or tolerated>min(12,seconds*.01) or longest>8 or soft_distance[j]-soft_distance[i]>min(30,length*.01)
-            invalid=invalid or seconds<=0 or length/seconds>(7 if label=='5 km' else 10)
+                invalid=episodes>max(1,min(6,int((length+1999)//2000))) or tolerated>min(24,max(4,12*length/5000),seconds*.01) or longest>8 or soft_distance[j]-soft_distance[i]>max(10,min(60,length*.006))
+            invalid=invalid or seconds<=0 or length/seconds>(7 if length>=3000 else 10)
             if invalid:
-                if label=='5 km' and (rejected_seconds is None or seconds<rejected_seconds):
+                if rejected_seconds is None or seconds<rejected_seconds:
                     rejected_seconds=seconds;chunk=checks[i:j];diag=distance_diagnostics(chunk)
                     reasons=[r['hard'] for r in chunk if r['hard']]
-                    if length/seconds>7:reason='impossible overall 5K pace'
+                    if length/seconds>(7 if length>=3000 else 10):reason='Implausible overall '+label+' pace'
                     elif reasons:reason=next((r for r in reasons if 'reset' in r or 'severe GPS' in r),reasons[0])
                     elif diag['nearStopOrTurnaroundLike']:reason=f"{diag['longestQuestionableSection']:g} s near-stop/stationary section exceeds tolerance"
                     else:reason='sustained GPS speed/distance inconsistency exceeds tolerance'
-                    diagnostics.update(reason=reason,severe=diag['severe'] or length/seconds>7,diagnostics=diag,candidateSeconds=seconds)
+                    current.update(reason=reason,severe=diag['severe'] or length/seconds>(7 if length>=3000 else 10),diagnostics=diag,candidateSeconds=seconds)
                 continue
             ea,eb=number(a.get('elevation')),number(rs[j].get('elevation'))
             descent=(eb-ea)/length if ea is not None and eb is not None else None
@@ -121,28 +127,31 @@ def segments(records, diagnostics=None):
                   'splits':splits,'splitCV':100*pstdev(splits)/mean(splits) if len(splits)>1 else None,
                   'halfChange':100*((seconds-half)/half-1) if half else None,'finalKm':splits[-1] if splits else None,
                   'flag':'Downhill >1% net descent' if flagged else None,'terrain':'Elevation available' if descent is not None else 'Elevation unavailable; grade unverified',
-                  'precision':f'Interpolated; up to {maxgap:g}s sampling',
+                  'precision':f'Interpolated; up to {maxgap:.0f}s sampling',
                   'evidence':'Sensor validated','eligible':not flagged,
-                  'validation':('Excluded · Downhill >1% net descent' if flagged else 'Sensor validated'+(f' · brief near-stop / GPS wobble tolerated ({tolerated:g} s)' if tolerated else ''))}
-            if label=='5 km':best['diagnostics']=distance_diagnostics(checks[i:j])
-        if best:output[label]=best
-    if '5 km' in output:
-        p=output['5 km'];diagnostics.update(reason=p['validation'],severe=bool(p['flag']),diagnostics=p['diagnostics'],candidateSeconds=p['seconds'])
-    elif not diagnostics:
-        diagnostics.update(reason='recording does not contain 5,000 m of cumulative travelled distance',severe=whole['severe'],diagnostics=whole)
+                  'validation':('Excluded · Downhill >1% net descent' if flagged else 'Sensor validated'+(f' · brief near-stop / GPS wobble tolerated ({tolerated:.0f} s)' if tolerated else ''))}
+            best['diagnostics']=distance_diagnostics(checks[i:j])
+        if best:
+            output[label]=best
+            current={'reason':best['validation'],'severe':bool(best['flag']),'diagnostics':best['diagnostics'],'candidateSeconds':best['seconds']}
+        elif not current:
+            current={'reason':f'FIT stream incomplete or too short for exact {length:g} m split','severe':whole['severe'],'diagnostics':whole}
+        by_distance[label]=current
+    diagnostics.update(by_distance.get('5 km',{}))
     return output
 
 
-def five_k_performance(run, local, validation):
+def record_performance(run, local, validation, length=5000, reported_key="fiveK"):
+    label="5K" if length==5000 else "10K" if length==10000 else f"{length:g} m"
     """One best credible result per activity, preferring corroborated sensor evidence.
     Missing/gapped/paused local data is inconclusive, not proof a Garmin split is false.
     """
-    reported=number(run.get('fiveK'));reason=validation.get('reason','sensor stream unavailable')
+    reported=number(run.get(reported_key));reason=validation.get('reason','sensor stream unavailable')
     diag=validation.get('diagnostics',{});garmin_flag=None
     if reported is not None:
-        if reported<=0 or reported<5000/7:garmin_flag='impossible overall 5K pace'
-        elif run.get('elapsed') and reported>run['elapsed']+10:garmin_flag='reported 5K time exceeds activity elapsed time'
-        elif run.get('distance') and run['distance']<4500:garmin_flag='activity summary distance cannot support a 5K'
+        if reported<=0 or reported<length/(7 if length>=3000 else 10):garmin_flag='impossible overall '+label+' pace'
+        elif run.get('elapsed') and reported>run['elapsed']+10:garmin_flag='reported '+label+' time exceeds activity elapsed time'
+        elif run.get('distance') and run['distance']<length*.9:garmin_flag='activity summary distance cannot support a '+label
         elif validation.get('severe') and (not local or local.get('flag')):garmin_flag=reason
     valid=local and not local.get('flag')
     if valid and (reported is None or garmin_flag or local['seconds']<=reported+2):
@@ -162,6 +171,11 @@ def five_k_performance(run, local, validation):
                 'validation':'Excluded · '+reason,'diagnostics':diag,'hr':None,'maxHR':None,'cadence':None,
                 'splits':[],'splitCV':None,'halfChange':None,'finalKm':None}
     return None
+
+
+
+def five_k_performance(run, local, validation):
+    return record_performance(run,local,validation)
 
 
 def classify(run, records):
@@ -202,10 +216,21 @@ def derived(store, run):
     if row:return json.loads(row[0])
     from .analysis import detail_metrics
     records=(store.get('series',aid) or {}).get('records',[])
-    validation={}
-    local_records=segments(records,validation)
+    validation={};record_validation={}
+    local_records=segments(records,validation,record_validation)
     result={'fiveKValidation':validation,'metrics':detail_metrics({'records':records}),'bands':bands(records),'records':local_records,'quality':report(records),'classification':classify(run,records)}
     result['fiveKPerformance']=five_k_performance(run,local_records.get('5 km'),validation)
+    performances={}
+    for label,length in DISTANCES.items():
+        if label=='5 km':performance=result['fiveKPerformance']
+        else:performance=record_performance(run,local_records.get(label),record_validation.get(label,{}),length,'tenK' if label=='10 km' else '_unavailable')
+        if performance:performances[label]=performance
+    result['recordPerformances']=performances
+    result['recordValidation']=record_validation
+    result['recordEfforts']={}
+    for label,length in DISTANCES.items():
+        if run.get('distance') and abs(run['distance']/length-1)<=.02 and label not in performances:
+            result['recordEfforts'][label]={'evidence':'Recorded effort','eligible':False,'seconds':None,'validation':f'{label.replace(" km","K")} recorded · exact {length:,.0f} m split unavailable · '+record_validation.get(label,{}).get('reason','FIT stream unavailable'),'diagnostics':record_validation.get(label,{}).get('diagnostics',{})}
     recorded_distance=max((number(r.get('distance')) or 0 for r in records),default=0)
     if records and run.get('distance') and recorded_distance<run['distance']*.95:
         result['quality']['issues'].append('Incomplete sensor recording: less than 95% of summary distance')
@@ -264,7 +289,7 @@ def progression(runs):
     for label in DISTANCES:
         events=[];best=None
         for r in sorted(runs,key=lambda x:(x['date'],x['id'])):
-            p=r.get('fiveKPerformance') if label=='5 km' else r.get('records',{}).get(label)
+            p=r.get('recordPerformances',{}).get(label) or (r.get('fiveKPerformance') if label=='5 km' else r.get('records',{}).get(label))
             if label=='5 km' and p is None:p=r.get('records',{}).get(label) # legacy callers/tests
             if p is not None and not p.get('eligible',not p.get('flag')):continue
             if not p or p.get('flag'):continue

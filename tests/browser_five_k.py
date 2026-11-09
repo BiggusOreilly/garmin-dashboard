@@ -20,7 +20,7 @@ with sync_playwright() as p:
         assert [x['seconds'] for x in payload['records']['5 km']]==[1792,1770,1609]
         assert payload['records']['5 km'][-1]['evidence']=='Garmin reported'
         go('5K Performance')
-        assert '26:49 · Garmin reported' in page.locator('.featured').inner_text()
+        assert '26m 49s · Garmin reported' in page.locator('.featured').inner_text()
         assert page.locator('.five-k-table tbody tr').count()==7
         assert page.locator('.five-k-table .evidence-badge.reported').count()==2
         assert page.locator('.five-k-table .evidence-badge.sensor').count()==2
@@ -37,13 +37,13 @@ with sync_playwright() as p:
         assert 'Garmin reported' in page.locator('.validation-note').first.inner_text()
         page.screenshot(path=str(out/f'{width}-detail.png'),full_page=True)
         go('Personal Records');tile=page.get_by_role('button',name=re.compile(r'^5 km '))
-        assert '26:49' in tile.inner_text();assert 'Garmin reported' in tile.inner_text()
+        assert '26m 49s' in tile.inner_text();assert 'Garmin reported' in tile.inner_text()
         page.screenshot(path=str(out/f'{width}-records.png'),full_page=True)
-        go('Fitness Trends');card=page.locator('.card').filter(has=page.get_by_role('heading',name='Best credible 5K performance',exact=True))
+        go('Fitness Trends');card=page.locator('.card').filter(has=page.get_by_role('heading',name='Best 5K in period',exact=True))
         assert card.locator('.recharts-line-dot').count()>0
         assert not page.evaluate('document.documentElement.scrollWidth>innerWidth+1')
-        go('Running Trends');kpi=page.locator('.kpi').filter(has_text='Credible 5K best');assert '26:49' in kpi.inner_text();assert 'Garmin reported' in kpi.inner_text()
-        checks.append({'width':width,'PB':'26:49 Garmin reported','uniqueRows':7,'tiers':'A/B/C visible','navigation':'passed'})
+        go('Running Trends');kpi=page.locator('.kpi').filter(has_text='Best 5K in period');assert '26m 49s' in kpi.inner_text();assert 'Garmin reported' in kpi.inner_text()
+        checks.append({'width':width,'PB':'26m 49s Garmin reported','uniqueRows':7,'tiers':'A/B/C visible','navigation':'passed'})
         page.close()
     b.close()
 assert not errors,errors

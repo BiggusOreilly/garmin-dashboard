@@ -1,0 +1,19 @@
+// Development-only tests; no Node installation is needed to run Stride on a Mac.
+const assert=require('node:assert/strict');const {execFileSync}=require('node:child_process');const fs=require('node:fs');const path=require('node:path');
+const out=path.resolve('work/frontend-unit');fs.mkdirSync(out,{recursive:true});
+execFileSync('node_modules/.bin/tsc',['--outDir',out,'--module','commonjs','--target','ES2022','--jsx','react-jsx','--esModuleInterop','--skipLibCheck','frontend/src/format.ts','frontend/src/appearance.tsx','frontend/src/relationships.tsx']);fs.writeFileSync(path.join(out,'package.json'),'{"type":"commonjs"}');
+const memory=new Map();global.localStorage={getItem:k=>memory.get(k)||null,setItem:(k,v)=>memory.set(k,v)};const variables={};global.document={documentElement:{dataset:{},style:{setProperty:(k,v)=>variables[k]=v}}};
+const f=require(path.join(out,'format.js')),a=require(path.join(out,'appearance.js')),r=require(path.join(out,'relationships.js'));
+let checks=0;const eq=(x,y)=>{assert.deepEqual(x,y);checks++};
+for(const [v,want] of [[42,'0m 42s'],[309,'5m 9s'],[1609,'26m 49s'],[3570,'59m 30s'],[3852,'1h 4m 12s'],[59.9,'1m 0s'],[3599.7,'1h 0m 0s'],[1609.344,'26m 49s']])eq(f.formatDuration(v),want);
+for(const bad of [null,undefined,NaN,Infinity,-1])eq(f.formatDuration(bad),'—');
+eq(f.paceWithUnit(322.1745),'5:22/km');eq(f.formatDistance(1609.344),'1.61 km');eq(f.formatHeartRate(154.378399),'154 bpm');eq(f.formatCadence(159.8274),'160 spm');eq(f.formatPercent(4.387499),'4.4%');eq(f.withUnit(18.434748,'km',1),'18.4 km');eq(f.formatPercent(null),'—');eq(f.formatDifference(null,'%'),'—');eq(f.formatNumber(Infinity),'—');eq(f.metricLabel('zoneMinutes'),'Intensity-weighted minutes');eq(f.metricValue('rolling7',18.434748),'18.4 km');eq(f.metricValue('seconds',1609.344),'26m 49s');
+localStorage.setItem('stride-date-style','iso');eq(f.formatDate('2026-11-05'),'2026-11-05');localStorage.setItem('stride-date-style','long');eq(f.formatDate('2026-11-05'),'5 November 2026');localStorage.setItem('stride-date-style','short');eq(f.formatDate('2026-11-05'),'5 Nov 2026');eq(f.formatDate('invalid'),'—');
+const runs=[{id:'24971159968',date:'2026-11-05',start:'2026-11-05T09:00:00'},{id:'24971159969',date:'2026-10-12'},{id:'24971159970',date:'2026-10-22'},{id:'24971159971',date:'2026-11-05',start:'2026-11-05T07:00:00'}];eq(f.orderRuns(runs).map(x=>x.id),[runs[1].id,runs[2].id,runs[3].id,runs[0].id]);eq(runs[0].id,'24971159968');const labels=f.runLabels(runs);assert(Object.values(labels).every(l=>!l.match(/\d{8,}/)));checks++;assert(labels[runs[0].id].includes('09:00'));checks++;
+function luminance(c){const v=c.match(/\w\w/g).map(n=>parseInt(n,16)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4);return .2126*v[0]+.7152*v[1]+.0722*v[2]}
+function contrast(x,y){const a=luminance(x.slice(1)),b=luminance(y.slice(1));return (Math.max(a,b)+.05)/(Math.min(a,b)+.05)}
+for(const [name,t] of Object.entries(a.THEMES)){localStorage.setItem('stride-theme',name);eq(a.applyAppearance(),name);eq(variables['--accent'],t.accent);for(const bg of [t.bg,t.surface,t.soft]){assert(contrast('#edf3f1',bg)>=4.5);assert(contrast('#a8b7b3',bg)>=4.5);assert(contrast(t.accent,bg)>=4.5);checks+=3}}
+for(const t of Object.values(a.THEMES)){const series=[t.accent,...Object.entries(t).filter(([k])=>k.startsWith('series-')).map(([,v])=>v)];eq(new Set(series).size,5);for(const colour of series.slice(1))for(const bg of [t.bg,t.surface,t.soft]){assert(contrast(colour,bg)>=3);checks++}}
+localStorage.setItem('stride-theme','invalid');eq(a.applyAppearance(),'green');
+const points=Array.from({length:121},(_,i)=>({t:i,speed:3,hr:152}));const bins=r.hrBins(points);eq(bins.length,1);eq(bins[0].pace,1000/3);eq(bins[0].seconds,120);eq(r.hrBins(points.slice(0,20)).length,0);eq(r.hrBins(points.map(p=>({...p,hr:null}))).length,0);
+console.log(`${checks} frontend formatting, preferences, palette contrast, ordering and aggregation checks passed.`);

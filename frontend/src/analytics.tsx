@@ -12,6 +12,26 @@ import {
   Scatter,
 } from "recharts";
 
+import {
+  formatNumber as fmt,
+  formatPace as pace,
+  formatDuration as time,
+  formatDate,
+  formatPercent,
+  formatHeartRate,
+  formatCadence,
+  formatDistance,
+  withUnit,
+  formatDifference,
+  metricLabel,
+  metricValue,
+  displayText,
+  orderRuns,
+  runLabels,
+} from "./format";
+import { colors, chartTokens } from "./appearance";
+import { ChartTooltip } from "./chart-ui";
+import { RunRelationship } from "./relationships";
 export type Point = Record<string, any>;
 export const categories = [
   "Recovery",
@@ -26,19 +46,6 @@ export const categories = [
   "Race / time trial",
   "Mixed / unclassified",
 ];
-const colors = ["#bce68b", "#86b7ca", "#d5ad7c", "#a5a0d5", "#d18e99"];
-const fmt = (v: any, d = 1) =>
-  v == null
-    ? "—"
-    : Number(v).toLocaleString("en-AU", { maximumFractionDigits: d });
-const pace = (v: any) =>
-  v == null
-    ? "—"
-    : `${Math.floor(Math.round(v) / 60)}:${String(Math.round(v) % 60).padStart(2, "0")}`;
-const time = (v: any) =>
-  v == null || !Number.isFinite(v)
-    ? "—"
-    : `${Math.floor(v / 60)}:${String(Math.round(v) % 60).padStart(2, "0")}`;
 const mean = (a: number[]) =>
   a.length ? a.reduce((s, v) => s + v, 0) / a.length : null;
 const shift = (d: string, n: number) => {
@@ -96,6 +103,10 @@ export function Plot({
   format,
   open,
   scatter = false,
+  names = {},
+  metric,
+  xMetric,
+  normalized = false,
 }: {
   data: Point[];
   keys: string[];
@@ -103,6 +114,10 @@ export function Plot({
   format?: (v: any) => string;
   open?: (id: string) => void;
   scatter?: boolean;
+  names?: Record<string, string>;
+  metric?: string;
+  xMetric?: string;
+  normalized?: boolean;
 }) {
   if (!data.some((p) => keys.some((k) => p[k] != null))) return <Empty />;
   return (
@@ -110,25 +125,32 @@ export function Plot({
       <ResponsiveContainer width="100%" height="100%">
         {scatter ? (
           <ScatterChart margin={{ left: 0, right: 20, bottom: 20, top: 10 }}>
-            <CartesianGrid stroke="#29352d" />
+            <CartesianGrid stroke="var(--chart-grid)" />
             <XAxis
               dataKey={x}
-              name={x}
+              name={metricLabel(xMetric || x)}
               type="number"
-              tickFormatter={x === "pace" ? pace : undefined}
+              tickFormatter={(v) => metricValue(xMetric || x, Number(v))}
               domain={["auto", "auto"]}
             />
             <YAxis
               dataKey={keys[0]}
-              name={keys[0]}
+              name={metricLabel(metric || keys[0])}
+              tickFormatter={(v) => metricValue(metric || keys[0], v)}
               type="number"
               domain={["auto", "auto"]}
             />
             <Tooltip
-              contentStyle={{
-                background: "#19221c",
-                border: "1px solid #435044",
-              }}
+              content={
+                <ChartTooltip
+                  x={xMetric || x}
+                  xMetric={xMetric}
+                  names={names}
+                  metric={metric}
+                  normalized={normalized}
+                  format={format}
+                />
+              }
             />
             <Scatter data={data} fill={colors[0]} isAnimationActive={false} />
           </ScatterChart>
@@ -145,36 +167,40 @@ export function Plot({
             }}
           >
             <CartesianGrid
-              stroke="#29352d"
+              stroke="var(--chart-grid)"
               vertical={false}
               strokeDasharray="3 5"
             />
             <XAxis
               dataKey={x}
               minTickGap={35}
-              tick={{ fontSize: 11 }}
+              tick={{ fill: chartTokens.text, fontSize: 11 }}
               tickFormatter={(v) =>
-                x === "date" ? String(v).slice(5) : fmt(v)
+                x === "date"
+                  ? formatDate(String(v), "compact")
+                  : metricValue(xMetric || x, Number(v))
               }
             />
             <YAxis
               width={52}
-              tick={{ fontSize: 11 }}
+              tick={{ fill: chartTokens.text, fontSize: 11 }}
               domain={["auto", "auto"]}
-              tickFormatter={format}
+              tickFormatter={
+                format ||
+                ((v: any) =>
+                  normalized ? fmt(v, 1) : metricValue(metric || keys[0], v))
+              }
             />
             <Tooltip
-              contentStyle={{
-                background: "#19221c",
-                border: "1px solid #435044",
-                borderRadius: 8,
-              }}
-              formatter={(v: any) => (format ? format(v) : fmt(v))}
-              labelFormatter={(label: any, entries: any) =>
-                String(label) +
-                (entries?.[0]?.payload?.evidence
-                  ? " · " + entries[0].payload.evidence
-                  : "")
+              content={
+                <ChartTooltip
+                  x={xMetric || x}
+                  xMetric={xMetric}
+                  names={names}
+                  metric={metric}
+                  normalized={normalized}
+                  format={format}
+                />
               }
             />
             <Legend wrapperStyle={{ fontSize: 11, paddingTop: 10 }} />
@@ -182,7 +208,7 @@ export function Plot({
               <Line
                 key={k}
                 dataKey={k}
-                name={k}
+                name={names[k] || metricLabel(k)}
                 stroke={colors[i % colors.length]}
                 strokeWidth={i ? 1.6 : 2.2}
                 dot={(props: any) => {
@@ -202,7 +228,7 @@ export function Plot({
                       }
                       fill={
                         tier === "Garmin reported"
-                          ? "#19221c"
+                          ? "var(--surface-raised)"
                           : colors[i % colors.length]
                       }
                     />
@@ -238,8 +264,8 @@ export function InsightList({
           <button className="insight-row" key={i.id} onClick={() => go(i.page)}>
             <span className="insight-mark">→</span>
             <span>
-              <strong>{i.text}</strong>
-              <small>{i.evidence}</small>
+              <strong>{displayText(i.text)}</strong>
+              <small>{displayText(i.evidence)}</small>
             </span>
             <span>→</span>
           </button>
@@ -327,7 +353,8 @@ export function BandAnalysis({
     mode,
     band,
   );
-  const f = mode === "hr" ? pace : (v: any) => fmt(v) + " bpm";
+  const f =
+    mode === "hr" ? (v: any) => metricValue("pace", v) : formatHeartRate;
   const choices =
     mode === "hr"
       ? Array.from({ length: 20 }, (_, i) => 100 + i * 5)
@@ -392,7 +419,7 @@ export function BandAnalysis({
             value={
               c4.value == null
                 ? "Insufficient reliable data"
-                : `${c4.value > 0 ? "+" : ""}${fmt(c4.value)} ${mode === "hr" ? "sec/km" : "bpm"}`
+                : `${c4.value > 0 ? "+" : ""}${fmt(c4.value, mode === "hr" ? 0 : 1)} ${mode === "hr" ? "sec/km" : "bpm"}`
             }
             note={`${c4.a} recent / ${c4.b} previous runs`}
           />
@@ -401,7 +428,7 @@ export function BandAnalysis({
             value={
               c12.value == null
                 ? "Insufficient reliable data"
-                : `${c12.value > 0 ? "+" : ""}${fmt(c12.value)} ${mode === "hr" ? "sec/km" : "bpm"}`
+                : `${c12.value > 0 ? "+" : ""}${fmt(c12.value, mode === "hr" ? 0 : 1)} ${mode === "hr" ? "sec/km" : "bpm"}`
             }
             note={`${c12.a} recent / ${c12.b} previous runs`}
           />
@@ -444,7 +471,7 @@ export function BandAnalysis({
             .reverse()
             .map((p) => (
               <button key={p.id} onClick={() => open(p.id)}>
-                <span>{p.date}</span>
+                <span>{formatDate(p.date)}</span>
                 <strong>{f(p.value)}</strong>
                 <small>{fmt(p.seconds / 60)} matched min →</small>
               </button>
@@ -483,7 +510,7 @@ export function Fitness({
     },
     { title: "Aerobic decoupling", mode: "drift", band: "", unit: "%", f: fmt },
     {
-      title: "Best credible 5K performance",
+      title: "Best 5K in period",
       mode: "five",
       band: "",
       unit: "sec",
@@ -551,7 +578,11 @@ export function Fitness({
                       value={
                         t.value == null
                           ? "—"
-                          : `${t.value > 0 ? "+" : ""}${fmt(t.value)} ${c.unit}`
+                          : formatDifference(
+                              t.value,
+                              c.unit,
+                              c.unit === "sec" || c.unit === "sec/km" ? 0 : 1,
+                            )
                       }
                       note={`${t.a} recent / ${t.b} previous runs`}
                     />
@@ -623,9 +654,9 @@ export function Validation({ result }: { result: Point }) {
   const d = result.diagnostics || {};
   return (
     <div className="validation-note">
-      <span>{result.validation}</span>
+      <span>{displayText(result.validation)}</span>
       {result.alternativeNote && (
-        <small className="block">{result.alternativeNote}</small>
+        <small className="block">{displayText(result.alternativeNote)}</small>
       )}
       <details>
         <summary>Validation details</summary>
@@ -656,7 +687,9 @@ export function Validation({ result }: { result: Point }) {
               <dt>{k}</dt>
               <dd>
                 {typeof v === "number"
-                  ? fmt(v, 2)
+                  ? k.includes("(s)")
+                    ? time(v)
+                    : fmt(v, 2)
                   : v == null
                     ? "—"
                     : String(v)}
@@ -713,7 +746,7 @@ export function Records({
                   progression["5 km"].at(-1).evidence
                 : "—"
             }
-            note="Best credible sensor-validated or Garmin-reported result · all imported history"
+            note="Best sensor-validated or Garmin-reported result · all imported history"
           />
           <Stat
             label="Recent best"
@@ -737,7 +770,7 @@ export function Records({
             }
           />
           <Stat
-            label="Credible 5K performances"
+            label="5K performances"
             value={String(
               qualifying.filter((r) => r.fiveKPerformance.eligible).length,
             )}
@@ -759,6 +792,10 @@ export function Records({
                   onClick={() => {
                     setDistance(label);
                     if (p) open(p.id);
+                    else {
+                      const effort = runs.find((r) => r.recordEfforts?.[label]);
+                      if (effort) open(effort.id);
+                    }
                   }}
                 >
                   <span>{label}</span>
@@ -771,18 +808,22 @@ export function Records({
                   </strong>
                   {label === "5 km" && p && <Evidence result={p} />}
                   <small>
-                    {p ? `${p.date} · ${p.name}` : "Insufficient reliable data"}
+                    {p
+                      ? `${formatDate(p.date)} · ${p.name}`
+                      : runs.some((r) => r.recordEfforts?.[label])
+                        ? "Recorded effort · exact split unavailable"
+                        : "No timed result available"}
                   </small>
                   <small>
                     {p && label !== "Longest run"
                       ? `Average pace ${pace(p.seconds / (({ "400 m": 0.4, "1 km": 1, "1 mile": 1.609344, "3 km": 3, "5 km": 5, "10 km": 10 } as Record<string, number>)[label] || 1))}/km`
                       : label === "Longest run"
                         ? "Recorded summary distance"
-                        : "Sensor-validated segment"}
+                        : "Exact split unavailable"}
                   </small>
                   <small>
                     {p
-                      ? `Average HR ${fmt(p.hr)} bpm · improvement ${p.improvement == null ? "first record" : label === "Longest run" ? fmt(p.improvement / 1000) + " km" : fmt(p.improvement) + " sec"}`
+                      ? `Average HR ${formatHeartRate(p.hr)} · improvement ${p.improvement == null ? "first record" : label === "Longest run" ? fmt(p.improvement / 1000) + " km" : time(p.improvement)}`
                       : label === "400 m"
                         ? "400 m requires ≤2-second sampling"
                         : "Requires reliable continuous distance samples"}
@@ -795,7 +836,7 @@ export function Records({
       )}
       <Panel
         title={five ? "5K PB progression" : "Record progression history"}
-        sub="Each event is a new credible best in imported history · sensor validated and Garmin reported both qualify; flagged results excluded"
+        sub="Each event is a new best in imported history · evidence labels distinguish Garmin-reported and sensor-validated results"
       >
         {!five && (
           <label className="analysis-controls">
@@ -827,7 +868,7 @@ export function Records({
             .map((p: Point) => (
               <button key={p.id} onClick={() => open(p.id)}>
                 <span>
-                  {p.date} · {p.name}
+                  {formatDate(p.date)} · {p.name}
                 </span>
                 <strong>
                   {p.seconds ? time(p.seconds) : fmt(p.distance / 1000) + " km"}
@@ -836,18 +877,26 @@ export function Records({
                 <small>
                   {p.improvement == null
                     ? "First imported best"
-                    : `${fmt(p.improvement)} ${p.seconds ? "sec" : "m"} improvement`}{" "}
+                    : `${p.seconds ? time(p.improvement) : withUnit(p.improvement, "m")} improvement`}{" "}
                   →
                 </small>
               </button>
             ))}
         </div>
       </Panel>
+      {!five && (
+        <RecordHistory
+          runs={runs}
+          distance={distance}
+          events={events}
+          open={open}
+        />
+      )}
       {five && (
         <>
           <Panel
             title="5K fitness trend"
-            sub="Best credible result per run + 28-day mean · filled dots: sensor validated; outlined dots: Garmin reported"
+            sub="Best result per run + 28-day mean · filled dots: sensor validated; outlined dots: Garmin reported"
           >
             <Plot
               data={rolling(
@@ -900,7 +949,7 @@ export function Records({
                             className="text-button"
                             onClick={() => open(r.id)}
                           >
-                            {r.date} · {r.name} →
+                            {formatDate(r.date)} · {r.name} →
                           </button>
                         </td>
                         <td>{time(p.seconds)}</td>
@@ -908,19 +957,21 @@ export function Records({
                           <Evidence result={p} />
                         </td>
                         <td>
-                          {fmt(p.hr)} / {fmt(p.maxHR)}
+                          {fmt(p.hr, 0)} / {fmt(p.maxHR, 0)}
                         </td>
-                        <td>{fmt(p.cadence)}</td>
+                        <td>{fmt(p.cadence, 0)}</td>
                         <td>
                           {p.splits?.length
                             ? p.splits.map((v: number) => pace(v)).join(" · ")
                             : "—"}
                         </td>
                         <td>
-                          {p.splitCV == null ? "—" : fmt(p.splitCV) + "%"}
+                          {p.splitCV == null ? "—" : formatPercent(p.splitCV)}
                         </td>
                         <td>
-                          {p.halfChange == null ? "—" : fmt(p.halfChange) + "%"}
+                          {p.halfChange == null
+                            ? "—"
+                            : formatPercent(p.halfChange)}
                         </td>
                         <td>{pace(p.finalKm)}</td>
                         <td>
@@ -943,14 +994,14 @@ export function Records({
         </>
       )}
       <p className="caption">
-        FIT results use cumulative travelled distance and full elapsed time. For
-        5K only, up to three isolated questionable episodes can be tolerated:
-        ≤12 seconds total and ≤1% of elapsed time, ≤8 consecutive seconds, ≤30
-        metres of affected distance. Individual GPS disagreements must be ≤20
-        metres; sampling gaps over 10 seconds, distance resets and teleports
-        remain rejected. Garmin-reported results are retained when local
-        validation is unavailable or inconclusive. Flagged performances remain
-        excluded. No coordinates or inferred direction are used.
+        Timed records use cumulative travelled distance and full elapsed time.
+        For 1 km, 1 mile, 3 km, 5 km and 10 km, brief slowdowns and isolated GPS
+        wobbles are tolerated within distance-aware time and distance budgets.
+        Sustained stops, gaps over 10 seconds, distance resets, teleports and
+        implausible performance remain excluded. Garmin-reported exact splits
+        retain their evidence labels. A near-distance activity is shown as a
+        recorded effort when no exact split exists; no missing distance is
+        invented. See Settings for the methodology.
       </p>
     </>
   );
@@ -1033,14 +1084,14 @@ export function Training({
                 .reverse()
                 .map((w: Point) => (
                   <tr key={w.date}>
-                    <td>{w.date}</td>
+                    <td>{formatDate(w.date)}</td>
                     <td>{fmt(w.km)} km</td>
                     <td>{w.count}</td>
-                    <td>{fmt(w.average)} km</td>
+                    <td>{withUnit(w.average, "km", 1)}</td>
                     <td>{fmt(w.longest)} km</td>
-                    <td>{fmt(w.longShare)}%</td>
-                    <td>{fmt(w.change)}%</td>
-                    <td>{fmt(w.baseline)} km</td>
+                    <td>{formatPercent(w.longShare)}</td>
+                    <td>{formatPercent(w.change)}</td>
+                    <td>{withUnit(w.baseline, "km", 1)}</td>
                     <td>
                       {!w.complete
                         ? "Incomplete week"
@@ -1110,7 +1161,7 @@ export function Similar({
           return (
             <div key={r.id}>
               <button className="text-button" onClick={() => open(r.id)}>
-                {r.date} · {r.name} →
+                {formatDate(r.date)} · {r.name} →
               </button>
               <span className="small-tag">
                 {delta == null
@@ -1123,11 +1174,14 @@ export function Similar({
                 {delta != null ? ` · ${fmt(delta)}% speed/HR` : ""}
               </span>
               <p>
-                Current vs previous: {pace(run.pace)} / {pace(r.pace)} per km ·{" "}
-                {fmt(run.hr)} / {fmt(r.hr)} bpm · {fmt(run.cadence)} /{" "}
-                {fmt(r.cadence)} spm · drift {fmt(run.metrics?.drift?.value)} /{" "}
-                {fmt(r.metrics?.drift?.value)}% · late split{" "}
-                {fmt(run.metrics?.splitChange)} / {fmt(r.metrics?.splitChange)}%
+                Current vs previous: {metricValue("pace", run.pace)} /{" "}
+                {metricValue("pace", r.pace)} · {formatHeartRate(run.hr)} /{" "}
+                {formatHeartRate(r.hr)} · {formatCadence(run.cadence)} /{" "}
+                {formatCadence(r.cadence)} · drift{" "}
+                {formatPercent(run.metrics?.drift?.value)} /{" "}
+                {formatPercent(r.metrics?.drift?.value)} · late split{" "}
+                {formatPercent(run.metrics?.splitChange)} /{" "}
+                {formatPercent(r.metrics?.splitChange)}
               </p>
               <button
                 className="text-button"
@@ -1167,9 +1221,9 @@ export function Comparison({
     [error, setError] = useState(""),
     [axis, setAxis] = useState("percent"),
     [search, setSearch] = useState("");
-  const selected = ids
-    .map((id) => runs.find((r) => r.id === id))
-    .filter(Boolean) as Point[];
+  const selected = orderRuns(
+    ids.map((id) => runs.find((r) => r.id === id)).filter(Boolean) as any[],
+  ) as Point[];
   useEffect(() => {
     let active = true;
     setError("");
@@ -1223,7 +1277,11 @@ export function Comparison({
       x: axis === "percent" ? i : (i * maxKm) / 100,
     }));
   }
-  const keys = selected.map((r) => r.date + " · " + r.id);
+  const keys = selected.map((r, i) => "series" + i);
+  const labels = runLabels(selected as any[]);
+  const names = Object.fromEntries(
+    selected.map((r, i) => [keys[i], labels[r.id]]),
+  );
   return (
     <>
       <Panel
@@ -1262,7 +1320,7 @@ export function Comparison({
                   }
                 />
                 <span>
-                  {r.date} · {r.name}
+                  {formatDate(r.date)} · {r.name}
                   <small>
                     {fmt(r.distance / 1000)} km · {pace(r.pace)}/km ·{" "}
                     {r.classification?.label}
@@ -1290,7 +1348,7 @@ export function Comparison({
                   style={{ borderColor: colors[i] }}
                 >
                   <i style={{ background: colors[i] }} />
-                  {r.date} · {r.name} →
+                  {labels[r.id]} →
                 </button>
               ))}
             </div>
@@ -1304,7 +1362,7 @@ export function Comparison({
                     <th>Metric</th>
                     {selected.map((r, i) => (
                       <th key={r.id} style={{ color: colors[i] }}>
-                        {r.date}
+                        {labels[r.id]}
                       </th>
                     ))}
                   </tr>
@@ -1321,13 +1379,19 @@ export function Comparison({
                         " / " +
                         time(r.moving),
                     ],
-                    ["Average pace", (r: Point) => pace(r.pace) + "/km"],
+                    ["Average pace", (r: Point) => metricValue("pace", r.pace)],
                     [
                       "Average / max HR",
-                      (r: Point) => fmt(r.hr) + " / " + fmt(r.maxHR) + " bpm",
+                      (r: Point) =>
+                        formatHeartRate(r.hr) +
+                        " / " +
+                        formatHeartRate(r.maxHR),
                     ],
-                    ["Cadence", (r: Point) => fmt(r.cadence) + " spm"],
-                    ["Elevation gain", (r: Point) => fmt(r.elevation) + " m"],
+                    ["Cadence", (r: Point) => formatCadence(r.cadence)],
+                    [
+                      "Elevation gain",
+                      (r: Point) => withUnit(r.elevation, "m"),
+                    ],
                     ["Calories", (r: Point) => fmt(r.calories)],
                     [
                       "Stride length",
@@ -1336,7 +1400,7 @@ export function Comparison({
                     ],
                     [
                       "Decoupling",
-                      (r: Point) => fmt(r.metrics?.drift?.value) + "%",
+                      (r: Point) => formatPercent(r.metrics?.drift?.value),
                     ],
                     [
                       "First / second efficiency",
@@ -1348,12 +1412,15 @@ export function Comparison({
                     [
                       "HR change at matched pace",
                       (r: Point) =>
-                        fmt(r.metrics?.drift?.hrAtPaceChange) + " bpm",
+                        formatHeartRate(r.metrics?.drift?.hrAtPaceChange),
                     ],
                     [
                       "Pace change at matched HR",
                       (r: Point) =>
-                        fmt(r.metrics?.drift?.paceAtHRChange) + " sec/km",
+                        formatDifference(
+                          r.metrics?.drift?.paceAtHRChange,
+                          "sec/km",
+                        ),
                     ],
                     [
                       "First / second half pace",
@@ -1364,7 +1431,7 @@ export function Comparison({
                     ],
                     [
                       "Late split change",
-                      (r: Point) => fmt(r.metrics?.splitChange) + "%",
+                      (r: Point) => formatPercent(r.metrics?.splitChange),
                     ],
                     [
                       "Cadence change",
@@ -1372,7 +1439,8 @@ export function Comparison({
                     ],
                     [
                       "Pace at 150–155 bpm",
-                      (r: Point) => pace(r.bands?.hr?.["150"]?.value) + "/km",
+                      (r: Point) =>
+                        metricValue("pace", r.bands?.hr?.["150"]?.value),
                     ],
                     [
                       "Quality",
@@ -1422,8 +1490,15 @@ export function Comparison({
                 <Plot
                   data={data(field)}
                   keys={keys}
+                  names={names}
                   x="x"
-                  format={field === "pace" ? pace : undefined}
+                  xMetric={axis === "percent" ? "percent" : "km"}
+                  metric={field}
+                  format={
+                    field === "pace"
+                      ? (v: any) => metricValue("pace", v)
+                      : undefined
+                  }
                 />
               </Panel>
             ))}
@@ -1447,63 +1522,28 @@ export function Comparison({
                   <Plot
                     data={[...m.values()].sort((a, b) => a.km - b.km)}
                     keys={keys}
+                    names={names}
                     x="km"
-                    format={field === "pace" ? pace : undefined}
+                    metric={field}
+                    format={
+                      field === "pace"
+                        ? (v: any) => metricValue("pace", v)
+                        : undefined
+                    }
                   />
                 </Panel>
               );
             })}
             <Panel
-              title="HR vs pace"
-              sub="Matched sensor points; colours follow the selection legend"
+              title="Pace at comparable heart rate"
+              sub="Compare time-weighted HR-band curves or inspect recorded samples"
             >
-              <div className="analysis-chart">
-                <ResponsiveContainer>
-                  <ScatterChart>
-                    <CartesianGrid stroke="#29352d" />
-                    <XAxis
-                      dataKey="pace"
-                      type="number"
-                      name="Pace"
-                      domain={["auto", "auto"]}
-                      tickFormatter={pace}
-                    />
-                    <YAxis
-                      dataKey="hr"
-                      type="number"
-                      name="HR"
-                      domain={["auto", "auto"]}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: "#19221c",
-                        border: "1px solid #435044",
-                      }}
-                    />
-                    {selected.map((r, i) => (
-                      <Scatter
-                        key={r.id}
-                        name={r.date}
-                        fill={colors[i]}
-                        data={(details[r.id]?.series?.records || [])
-                          .filter(
-                            (p: Point, j: number) =>
-                              j % 10 === 0 &&
-                              p.hr >= 35 &&
-                              p.hr <= 220 &&
-                              p.speed >= 0.5 &&
-                              p.speed <= 10,
-                          )
-                          .map((p: Point) => ({
-                            pace: 1000 / p.speed,
-                            hr: p.hr,
-                          }))}
-                        isAnimationActive={false}
-                      />
-                    ))}
-                  </ScatterChart>
-                </ResponsiveContainer>
-              </div>
+              <RunRelationship
+                streams={selected.map((run) => ({
+                  run,
+                  records: details[run.id]?.series?.records || [],
+                }))}
+              />
             </Panel>
           </div>
         </>
@@ -1623,7 +1663,7 @@ export function RecoveryOverlay({
             </label>
           ))}
         </div>
-        <Plot data={normalized} keys={overlay} />
+        <Plot data={normalized} keys={overlay} normalized />
         <p className="caption">
           Zero is each metric’s mean; +1 is one standard deviation above it.
           Missing values create gaps. Normalised lines compare timing, not
@@ -1691,7 +1731,14 @@ export function RecoveryOverlay({
             note="Association does not imply causation"
           />
         </div>
-        <Plot data={paired} keys={[against]} x="x" scatter />
+        <Plot
+          data={paired}
+          keys={[against]}
+          x="x"
+          xMetric={metric}
+          metric={against === "performance" ? "hr" : "rolling7"}
+          scatter
+        />
         <p className="caption">
           Unadjusted exploratory Pearson correlation needs ≥10 paired days and
           variation in both metrics. Weather, terrain, training intensity,
@@ -1731,7 +1778,7 @@ export function RecoveryOverlay({
                 .map((d) => (
                   <tr key={d.date} onClick={() => d.id && open(d.id)}>
                     <td>
-                      {d.date}
+                      {formatDate(d.date)}
                       {d.id ? " →" : ""}
                     </td>
                     {[
@@ -1796,7 +1843,9 @@ export function Calendar({
         >
           ←
         </button>
-        <strong>{view === "week" ? begin : month}</strong>
+        <strong>
+          {view === "week" ? formatDate(begin) : formatDate(month + "-01")}
+        </strong>
         <button
           className="button"
           aria-label="Next calendar period"
@@ -1834,7 +1883,7 @@ export function Calendar({
         const week = days.slice(w * 7, w * 7 + 7);
         const rs = runs.filter((r) => r.date >= week[0] && r.date <= week[6]);
         return (
-          <div key={week[0]} className="calendar-week">
+          <div key={formatDate(week[0])} className="calendar-week">
             <div className="calendar-grid">
               {week.map((d) => (
                 <div
@@ -1866,7 +1915,8 @@ export function Calendar({
                         <strong>{fmt(r.distance / 1000)} km</strong>
                         <span>{r.classification?.label || "Run"}</span>
                         <small>
-                          {pace(r.pace)}/km · {fmt(r.hr)} bpm
+                          {metricValue("pace", r.pace)} ·{" "}
+                          {formatHeartRate(r.hr)}
                         </small>
                       </button>
                     ))}
@@ -1874,7 +1924,7 @@ export function Calendar({
               ))}
             </div>
             <p className="calendar-total">
-              Week of {week[0]}{" "}
+              Week of {formatDate(week[0])}{" "}
               <strong>
                 {fmt(rs.reduce((s, r) => s + (r.distance || 0), 0) / 1000)} km ·{" "}
                 {rs.length} runs
@@ -1932,7 +1982,7 @@ export function FitnessSnapshot({
           <strong>
             {aerobic.value == null
               ? "—"
-              : `${aerobic.value > 0 ? "+" : ""}${fmt(aerobic.value)} sec/km`}{" "}
+              : `${aerobic.value > 0 ? "+" : ""}${fmt(aerobic.value, 0)} sec/km`}{" "}
             →
           </strong>
         </button>
@@ -1952,10 +2002,8 @@ export function FitnessSnapshot({
         </button>
         <button onClick={() => go("5K Performance")}>
           <span>
-            Best credible 5K in period
-            <small className="block">
-              {bestFive?.evidence || "No credible result"}
-            </small>
+            Best 5K in period
+            <small className="block">{bestFive?.evidence || "No result"}</small>
           </span>
           <strong>
             {time(
@@ -1977,10 +2025,100 @@ export function FitnessSnapshot({
         Aerobic decoupling · lower generally means less late-run loss of speed
         per heartbeat.
       </p>
-      <Plot data={drift} keys={["value"]} format={(v) => fmt(v) + "%"} />
+      <Plot data={drift} keys={["value"]} format={(v) => formatPercent(v)} />
       <button className="text-button" onClick={() => go("Fitness Trends")}>
         Explore all fitness components →
       </button>
+    </Panel>
+  );
+}
+
+function RecordHistory({
+  runs,
+  distance,
+  events,
+  open,
+}: {
+  runs: Point[];
+  distance: string;
+  events: Point[];
+  open: (id: string) => void;
+}) {
+  const attempts = runs
+    .map((r) => ({
+      run: r,
+      result:
+        r.recordPerformances?.[distance] ||
+        (distance === "5 km" ? r.fiveKPerformance : r.records?.[distance]) ||
+        r.recordEfforts?.[distance],
+    }))
+    .filter((x) => x.result);
+  return (
+    <Panel
+      title={distance + " performance history"}
+      sub="All recorded performances in the selected period, including slower efforts. PB progression above contains only new bests."
+    >
+      <div className="table-scroll">
+        <table className="record-history">
+          <thead>
+            <tr>
+              {[
+                "Date / run",
+                "Result",
+                "Evidence",
+                "Status",
+                "Reason / diagnostics",
+              ].map((k) => (
+                <th key={k}>{k}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {attempts.map(({ run, result: p }) => (
+              <tr key={run.id}>
+                <td>
+                  <button className="text-button" onClick={() => open(run.id)}>
+                    {formatDate(run.date)} · {run.name} →
+                  </button>
+                </td>
+                <td>
+                  {time(p.seconds)}
+                  {p.evidence === "Recorded effort" && (
+                    <small className="block">
+                      Activity: {formatDistance(run.distance)} ·{" "}
+                      {time(run.duration)} timer time
+                    </small>
+                  )}
+                </td>
+                <td>
+                  <Evidence result={p} />
+                </td>
+                <td>
+                  {!p.eligible
+                    ? p.evidence === "Recorded effort"
+                      ? "Completed effort"
+                      : "Excluded"
+                    : events.some((e) => e.id === run.id)
+                      ? "PB event"
+                      : "Performance"}
+                </td>
+                <td>
+                  <Validation result={p} />
+                  <button className="text-button" onClick={() => open(run.id)}>
+                    Open run / revalidate →
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {!attempts.length && (
+        <p className="caption">
+          No performances for this distance in the selected period. Try all
+          time, or open an activity to retry FIT import.
+        </p>
+      )}
     </Panel>
   );
 }

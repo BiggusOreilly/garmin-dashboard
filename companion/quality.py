@@ -81,7 +81,7 @@ def distance_intervals(records):
         hard=None;soft=None
         if dt<=0:hard='non-increasing recording time'
         elif dd<0:hard='cumulative distance reset'
-        elif dt>10:hard=f'{dt:g} s recording gap'
+        elif dt>10:hard=f'{dt:.0f} s recording gap'
         elif speed>10:hard='severe GPS inconsistency (distance teleport)'
         elif speed<.5:soft='near-stop'
         elif recorded is not None and disagreement>max(1.5,recorded*.5):
@@ -121,7 +121,8 @@ def series_retry_reason(series, summary):
     expected=number(summary.get('distance'))
     distance=max(r['distance'] for r in valid)-min(r['distance'] for r in valid)
     if expected and distance<expected*.95:return 'incomplete sensor recording (less than 95% of summary distance)'
-    if summary.get('fastestSplit_5000') and expected and expected>=5000 and distance<5000:return 'incomplete sensor recording for reported 5K (less than 5,000 m available)'
+    for length in (5000,10000):
+        if summary.get('fastestSplit_'+str(length)) and expected and expected>=length and distance<length:return f'incomplete sensor recording for reported {length//1000}K (less than {length:,} m available)'
     gaps=sum(max(0,b['t']-a['t']) for a,b in zip(valid,valid[1:]) if b['t']-a['t']>10)
     if gaps>max(30,span*.1):return 'substantial missing sensor sections'
     if distance_diagnostics(distance_intervals(valid))['severe']:return 'questionable cumulative distance; retry original FIT parsing'
