@@ -49,3 +49,7 @@ Recent edits are revisited for 14 days (daily HR/SpO2: two days). Garmin's searc
 ## Validation boundary
 
 Cloud tests use explicitly synthetic data under `/workspace/work/*test*`, outside the repository. Production startup does not load fixtures. Fixture databases are marked and their UI displays a persistent synthetic-data banner; refresh is disabled in both frontend and backend. No real Garmin authentication or live data was exercised for this architecture. Real FIT variations, account-specific schema differences, historic Garmin retention and macOS Finder/Gatekeeper behavior require the first Mac run.
+
+## Refinement update · 9 November 2026
+
+`frontend/src/format.ts` centralises presentation without rounding stored/calculated data. `appearance.tsx` supplies local theme/date preferences; `chart-ui.tsx` shares tooltip formatting; `relationships.tsx` provides bounded within-run aggregation and a matched-effort timeline. Analysis fingerprint 8 adds per-distance record diagnostics, 10K reported evidence and near-distance effort history. SQLite schema version 2, official API authentication, local storage and launchers are unchanged. See REFINEMENT.md for methods and verification boundaries.

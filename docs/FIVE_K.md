@@ -16,7 +16,7 @@ Near-5K summary duration alone is not an exact 5K record. Garmin-reported result
 
 Use cumulative **travelled** distance, never straight-line displacement or coordinates. Candidate time is the full elapsed duration; near-stop time is never subtracted. Search sample starts and interpolate the end crossing as before.
 
-Only the 5K search tolerates short near-stops or small speed/distance wobbles. All of these must hold:
+The original 5K-specific rules below were generalised in analysis version 8 to 1 km–10 km with distance-aware budgets; see REFINEMENT.md. The original 5K search tolerates short near-stops or small speed/distance wobbles. All of these must hold:
 
 - No more than three separate questionable episodes. Consecutive bad samples form one episode, making the rule independent of 1 s versus 5 s recording frequency.
 - Total questionable time ≤12 s **and** ≤1% of the candidate elapsed duration.
@@ -24,7 +24,7 @@ Only the 5K search tolerates short near-stops or small speed/distance wobbles. A
 - Affected travelled distance ≤30 m (also capped at 1% of target distance).
 - An isolated non-stationary speed/distance discrepancy represents ≤20 m of disagreement for its interval.
 
-Sampling gaps >10 s, decreasing cumulative distance, non-increasing time, distance teleports implying >10 m/s and overall 5K speed >7 m/s remain rejected. A sustained stop or repeated wobbles exceeding the budgets cannot become a clean continuous sensor record. Shorter/other-distance records retain strict interval rules. Aerobic HR/pace sampling gates are unchanged.
+Sampling gaps >10 s, decreasing cumulative distance, non-increasing time, distance teleports implying >10 m/s and overall 5K speed >7 m/s remain rejected. A sustained stop or repeated wobbles exceeding the budgets cannot become a clean continuous sensor record. The 400 m rules remain strict; version 8 generalises tolerance to 1 km–10 km as documented in REFINEMENT.md. Aerobic HR/pace sampling gates are unchanged.
 
 A “turnaround-like” flag means a brief near-stop pattern, not an inferred geographic direction change. No heading or GPS coordinates are read or returned. Small anomalies are tolerated using observed cumulative distance; the algorithm does not invent replacement distance.
 
@@ -42,6 +42,6 @@ Reparse a cached local original first; download through the existing official cl
 
 ## Existing installation and privacy
 
-Analysis fingerprint version 7 invalidates old derived calculations automatically. No schema migration, dependency change, database deletion, key re-entry, Setup rerun or Node/npm installation is required. Close the dashboard, pull the update including production assets, and reopen. Already-imported Garmin 5K splits participate immediately. Use normal Refresh for automatic FIT recovery, or the per-activity action for immediate recovery. Full History is not required to correct PB selection.
+Analysis fingerprint version 8 invalidates old derived calculations automatically. No schema migration, dependency change, database deletion, key re-entry, Setup rerun or Node/npm installation is required. Close the dashboard, pull the update including production assets, and reopen. Already-imported Garmin 5K splits participate immediately. Use normal Refresh for automatic FIT recovery, or the per-activity action for immediate recovery. Full History is not required to correct PB selection.
 
 Garmin credentials, bearer-token handling, the official adapter, GPS projection, local storage and ignore protections are unchanged. No personal data was used in this update. Live device sampling, original availability and the reported activity can only be validated after refreshing locally on the Mac.

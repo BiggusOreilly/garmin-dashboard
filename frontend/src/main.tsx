@@ -42,6 +42,27 @@ import {
   Legend,
 } from "recharts";
 import "./style.css";
+import { RunRelationship, TrainingRelationship } from "./relationships";
+import {
+  formatHeartRate,
+  formatCadence,
+  formatDistance,
+  formatCalories,
+  paceWithUnit,
+  formatNumber as n,
+  formatPace as pace,
+  formatDuration as duration,
+  formatDate as shortDate,
+  formatDate as fullDate,
+  formatDateTime,
+  formatPercent,
+  withUnit,
+  displayText,
+  metricLabel,
+  metricValue,
+} from "./format";
+import { Appearance, useAppearance, colors, chartTokens } from "./appearance";
+import { ChartTooltip } from "./chart-ui";
 import {
   Validation,
   Evidence,
@@ -73,6 +94,8 @@ type Run = {
   calories: number | null;
   fiveK: number | null;
   fiveKPerformance?: any;
+  recordPerformances?: any;
+  recordEfforts?: any;
   fitImport?: any;
   zones: (number | null)[];
   trainingEffect: number | null;
@@ -137,25 +160,8 @@ type Detail = {
     cadenceChange: number | null;
   };
 };
-const ACCENT = "#bce68b",
-  SECOND = "#7d9f92";
-const n = (v: number | null | undefined, d = 0) =>
-  v == null || !Number.isFinite(v)
-    ? "—"
-    : v.toLocaleString("en-AU", {
-        minimumFractionDigits: d,
-        maximumFractionDigits: d,
-      });
-const pace = (v: number | null | undefined) =>
-  v == null || v <= 0
-    ? "—"
-    : `${Math.floor(Math.round(v) / 60)}:${String(Math.round(v) % 60).padStart(2, "0")}`;
-const duration = (v: number | null) =>
-  v == null
-    ? "—"
-    : v >= 3600
-      ? `${Math.floor(v / 3600)}h ${Math.floor((v % 3600) / 60)}m`
-      : `${Math.floor(v / 60)}:${String(Math.round(v) % 60).padStart(2, "0")}`;
+const ACCENT = "var(--accent)",
+  SECOND = "var(--series-2)";
 const mean = (xs: (number | null | undefined)[]) => {
   const a = xs.filter((v): v is number => v != null);
   return a.length ? a.reduce((a, b) => a + b, 0) / a.length : null;
@@ -170,30 +176,13 @@ const shift = (d: string, days: number) => {
   x.setDate(x.getDate() + days);
   return iso(x);
 };
-const shortDate = (d: string) =>
-  dateObj(d).toLocaleDateString("en-AU", { day: "numeric", month: "short" });
-const fullDate = (d: string) =>
-  dateObj(d).toLocaleDateString("en-AU", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
 const week = (d: string) => {
   const x = dateObj(d);
   x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
   return iso(x);
 };
 const isRun = (r: Run) => r.type.includes("running");
-const fmtTime = (d: string | null) =>
-  d
-    ? new Date(d).toLocaleString("en-AU", {
-        day: "numeric",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "Never";
+const fmtTime = (d: string | null) => (d ? formatDateTime(d) : "Never");
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const r = await fetch(path, options);
   const data = await r.json();
@@ -283,7 +272,7 @@ function Kpi({
       </div>
       <div className="kpi-value">
         {value}
-        <small>{unit}</small>
+        <small>{value === "—" ? null : unit}</small>
       </div>
       <div className="kpi-foot">
         {trend != null && (
@@ -324,13 +313,6 @@ function Chart({
 }) {
   const present = data.some((d) => d[field] != null);
   if (!present) return <Empty />;
-  const formatValue = (v: unknown) =>
-    typeof v === "number"
-      ? (format
-          ? format(v)
-          : n(v, ["km", "h", "kg", "brpm"].includes(unit) ? 1 : 0)) +
-        (unit ? " " + unit : "")
-      : String(v ?? "—");
   const common = {
     data,
     margin: { top: 12, right: 15, bottom: 0, left: 0 },
@@ -338,7 +320,11 @@ function Chart({
   };
   const inner = (
     <>
-      <CartesianGrid stroke="#28312d" vertical={false} strokeDasharray="3 5" />
+      <CartesianGrid
+        stroke="var(--chart-grid)"
+        vertical={false}
+        strokeDasharray="3 5"
+      />
       <XAxis
         dataKey={x}
         type={x !== "date" && kind !== "bar" ? "number" : "category"}
@@ -346,38 +332,36 @@ function Chart({
         minTickGap={35}
         tickLine={false}
         axisLine={false}
-        tick={{ fill: "#829087", fontSize: 11 }}
+        tick={{ fill: "var(--text-muted)", fontSize: 11 }}
         tickFormatter={(v) =>
-          x === "date" ? shortDate(String(v)) : n(Number(v), 1)
+          x === "date"
+            ? shortDate(String(v))
+            : x === "minute"
+              ? duration(Number(v) * 60)
+              : n(Number(v), 1)
         }
       />
       <YAxis
         width={44}
         tickLine={false}
         axisLine={false}
-        tick={{ fill: "#829087", fontSize: 11 }}
+        tick={{ fill: "var(--text-muted)", fontSize: 11 }}
         tickFormatter={(v) =>
-          format
-            ? format(Number(v))
-            : n(Number(v), ["h", "kg"].includes(unit) ? 1 : 0)
+          format ? format(Number(v)) : metricValue(field, Number(v))
         }
         domain={kind === "bar" ? [0, "auto"] : ["auto", "auto"]}
       />
       <Tooltip
-        contentStyle={{
-          background: "#1c2520",
-          border: "1px solid #3d4a40",
-          borderRadius: 10,
-          fontSize: 12,
-          color: "#edf2eb",
-        }}
-        itemStyle={{ color: ACCENT }}
-        labelFormatter={(v) =>
-          x === "date"
-            ? shortDate(String(v))
-            : String(v) + (x === "km" ? " km" : " min")
+        content={
+          <ChartTooltip
+            x={x}
+            format={format === pace ? (v: any) => paceWithUnit(v) : format}
+            names={{
+              [field]: metricLabel(field),
+              ...(secondary ? { [secondary]: metricLabel(secondary) } : {}),
+            }}
+          />
         }
-        formatter={formatValue}
       />
       {secondary && <Legend />}
     </>
@@ -390,6 +374,7 @@ function Chart({
             {inner}
             <Bar
               dataKey={field}
+              name={metricLabel(field)}
               fill={ACCENT}
               radius={[3, 3, 0, 0]}
               maxBarSize={28}
@@ -407,6 +392,7 @@ function Chart({
             </defs>
             <Area
               dataKey={field}
+              name={metricLabel(field)}
               type="monotone"
               stroke={ACCENT}
               strokeWidth={2}
@@ -420,6 +406,7 @@ function Chart({
             {inner}
             <Line
               dataKey={field}
+              name={metricLabel(field)}
               type="monotone"
               stroke={ACCENT}
               strokeWidth={2}
@@ -431,6 +418,7 @@ function Chart({
             {secondary && (
               <Line
                 dataKey={secondary}
+                name={metricLabel(secondary)}
                 stroke={SECOND}
                 dot={false}
                 strokeWidth={2}
@@ -456,51 +444,50 @@ function ScatterPlot({
   xUnit?: string;
   yUnit?: string;
 }) {
+  data = data.map((p) => ({
+    ...p,
+    [x]: x === "sleep" && typeof p[x] === "number" ? Number(p[x]) / 3600 : p[x],
+  }));
   if (!data.some((d) => d[x] != null && d[y] != null)) return <Empty />;
   return (
     <div className="chart" style={{ height: 230 }}>
       <ResponsiveContainer>
         <ScatterChart margin={{ top: 10, right: 20, bottom: 25, left: 0 }}>
-          <CartesianGrid stroke="#28312d" strokeDasharray="3 5" />
+          <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 5" />
           <XAxis
             type="number"
             dataKey={x}
-            name={x}
+            name={metricLabel(x)}
             domain={["auto", "auto"]}
             tickFormatter={(v) =>
               x === "pace" ? pace(Number(v)) : n(Number(v), 1)
             }
-            tick={{ fill: "#829087", fontSize: 11 }}
+            tick={{ fill: "var(--text-muted)", fontSize: 11 }}
             label={{
-              value: xUnit,
+              value: metricLabel(x),
               position: "insideBottom",
               offset: -15,
-              fill: "#829087",
+              fill: "var(--text-muted)",
               fontSize: 11,
             }}
           />
           <YAxis
             type="number"
             dataKey={y}
-            name={y}
+            name={metricLabel(y)}
             unit={" " + yUnit}
             domain={["auto", "auto"]}
-            tick={{ fill: "#829087", fontSize: 11 }}
+            tick={{ fill: "var(--text-muted)", fontSize: 11 }}
             width={65}
           />
           <ZAxis range={[25, 25]} />
           <Tooltip
-            cursor={{ strokeDasharray: "3 3" }}
-            contentStyle={{
-              background: "#1c2520",
-              border: "1px solid #3d4a40",
-              borderRadius: 10,
-              color: "#edf2eb",
-            }}
-            formatter={(v, name) => [
-              name === "pace" ? pace(Number(v)) : n(Number(v), 1),
-              name,
-            ]}
+            content={
+              <ChartTooltip
+                x={x}
+                names={{ [x]: metricLabel(x), [y]: metricLabel(y) }}
+              />
+            }
           />
           <Scatter
             data={data}
@@ -514,6 +501,7 @@ function ScatterPlot({
   );
 }
 function App() {
+  useAppearance();
   const [data, setData] = useState<Dashboard | null>(null),
     [error, setError] = useState(""),
     [page, setPage] = useState("Overview"),
@@ -837,29 +825,16 @@ function App() {
                     </span>
                   </button>
                 </td>
-                <td>
-                  {n(r.distance == null ? null : r.distance / 1000, 2)}{" "}
-                  <small>km</small>
-                </td>
+                <td>{formatDistance(r.distance)}</td>
                 <td>{duration(r.duration)}</td>
-                <td>
-                  {pace(r.pace)} <small>/km</small>
-                </td>
-                <td>
-                  {n(r.hr)} <small>bpm</small>
-                </td>
+                <td>{paceWithUnit(r.pace)}</td>
+                <td>{formatHeartRate(r.hr)}</td>
                 {!compact && (
                   <>
-                    <td>{n(r.maxHR)}</td>
-                    <td>
-                      {n(r.cadence)} <small>spm</small>
-                    </td>
-                    <td>
-                      {n(r.elevation)} <small>m</small>
-                    </td>
-                    <td>
-                      {n(r.calories)} <small>kcal</small>
-                    </td>
+                    <td>{formatHeartRate(r.maxHR)}</td>
+                    <td>{formatCadence(r.cadence)}</td>
+                    <td>{withUnit(r.elevation, "m")}</td>
+                    <td>{formatCalories(r.calories)}</td>
                   </>
                 )}
                 <td>
@@ -1327,7 +1302,7 @@ function App() {
                   sub="Each point is one run · timer-duration pace"
                   action={<span className="small-tag">EFFICIENCY</span>}
                 >
-                  <ScatterPlot data={chartRuns} />
+                  <TrainingRelationship runs={runs} open={openRun} go={go} />
                 </Card>
               </div>
               <div className="grid two">
@@ -1528,7 +1503,7 @@ function App() {
                   foot="Within selected period"
                 />
                 <Kpi
-                  label="Credible 5K best"
+                  label="Best 5K in period"
                   value={duration(bestFive?.seconds ?? null)}
                   foot={
                     bestFive
@@ -1605,7 +1580,7 @@ function App() {
                 </Card>
                 <Card
                   title="Recent 5 km performances"
-                  sub="Credible sensor-validated and Garmin-reported performances; flagged results excluded"
+                  sub="Sensor-validated and Garmin-reported performances; flagged results excluded"
                 >
                   <Chart
                     data={chartRuns.map((r) => ({
@@ -1732,7 +1707,7 @@ function App() {
                         {[
                           ["hrv", "HRV"],
                           ["rhr", "Resting HR"],
-                          ["sleep", "Sleep (seconds)"],
+                          ["sleep", "Sleep (hours)"],
                           ["bodyBattery", "Body Battery"],
                           ["stress", "Stress"],
                         ].map(([v, l]) => (
@@ -1798,7 +1773,7 @@ function App() {
                   label="Average / max HR"
                   value={n(selected.hr)}
                   unit="bpm"
-                  foot={`Maximum ${n(selected.maxHR)} bpm`}
+                  foot={`Maximum ${formatHeartRate(selected.maxHR)}`}
                 />
                 <Kpi
                   label="Cadence"
@@ -1905,6 +1880,35 @@ function App() {
                   {n((selected.quality?.coverage || 0) * 100)}%
                 </p>
               </Card>
+              {(selected.recordPerformances?.["10 km"] ||
+                selected.recordEfforts?.["10 km"]) && (
+                <div className="card analysis-panel">
+                  <div className="card-head">
+                    <div>
+                      <h3>
+                        10K ·{" "}
+                        {selected.recordPerformances?.["10 km"]?.eligible
+                          ? duration(
+                              selected.recordPerformances["10 km"].seconds,
+                            )
+                          : "Recorded effort / validation"}
+                      </h3>
+                    </div>
+                  </div>
+                  <Evidence
+                    result={
+                      selected.recordPerformances?.["10 km"] ||
+                      selected.recordEfforts?.["10 km"]
+                    }
+                  />
+                  <Validation
+                    result={
+                      selected.recordPerformances?.["10 km"] ||
+                      selected.recordEfforts?.["10 km"]
+                    }
+                  />
+                </div>
+              )}
               {selected.fiveKPerformance && (
                 <div className="card analysis-panel">
                   <div className="card-head">
@@ -1951,6 +1955,7 @@ function App() {
           )}
           {data && page === "Data / Settings" && (
             <>
+              <Appearance />
               <div className="grid two">
                 <Card
                   title="Local data library"
@@ -1962,7 +1967,11 @@ function App() {
                     <dt>Last completed attempt</dt>
                     <dd>{fmtTime(data.meta.lastCompleted)}</dd>
                     <dt>Earliest requested health date</dt>
-                    <dd>{data.meta.earliest || "No import yet"}</dd>
+                    <dd>
+                      {data.meta.earliest
+                        ? fullDate(data.meta.earliest)
+                        : "No import yet"}
+                    </dd>
                     <dt>Activities cached</dt>
                     <dd>{n(data.meta.activityCount)}</dd>
                     <dt>Health-summary days</dt>
@@ -2062,7 +2071,7 @@ function App() {
                   {data.meta.warnings.length ? (
                     <ul className="warnings">
                       {data.meta.warnings.map((w) => (
-                        <li key={w}>{w}</li>
+                        <li key={w}>{displayText(w)}</li>
                       ))}
                     </ul>
                   ) : (
@@ -2287,7 +2296,7 @@ function RunDetail({
               {a.splits.map((s) => (
                 <div key={s.km}>
                   <span>{s.km} km</span>
-                  <span>{pace(s.pace)} /km</span>
+                  <span>{paceWithUnit(s.pace)}</span>
                 </div>
               ))}
             </div>
@@ -2297,7 +2306,9 @@ function RunDetail({
           title="Pace versus heart rate"
           sub="Paired sensor readings from this activity"
         >
-          <ScatterPlot data={chart} />
+          <RunRelationship
+            streams={[{ run, records: detail.series.records }]}
+          />
         </Card>
         <Card title="Heart-rate zones" sub="Garmin-recorded zone durations">
           {zoneBars(run.zones)}
@@ -2309,11 +2320,8 @@ function RunDetail({
           <div className="observations">
             <div>
               <span>Aerobic decoupling</span>
-              <strong>
-                {n(a.drift.value, 1)}
-                <small> %</small>
-              </strong>
-              <p>{a.drift.reason}</p>
+              <strong>{withUnit(a.drift.value, "%", 1)}</strong>
+              <p>{displayText(a.drift.reason)}</p>
             </div>
             <div>
               <span>First / second efficiency</span>
@@ -2328,10 +2336,7 @@ function RunDetail({
             </div>
             <div>
               <span>HR change at comparable pace</span>
-              <strong>
-                {n(a.drift.hrAtPaceChange, 1)}
-                <small> bpm</small>
-              </strong>
+              <strong>{withUnit(a.drift.hrAtPaceChange, "bpm", 1)}</strong>
               <p>
                 Second minus first half in shared 15 sec/km pace bands; ≥2
                 minutes in each half.
@@ -2339,10 +2344,7 @@ function RunDetail({
             </div>
             <div>
               <span>Pace change at comparable HR</span>
-              <strong>
-                {n(a.drift.paceAtHRChange, 1)}
-                <small> sec/km</small>
-              </strong>
+              <strong>{withUnit(a.drift.paceAtHRChange, "sec/km", 1)}</strong>
               <p>
                 Second minus first half in shared 5 bpm bands; ≥2 minutes in
                 each half. Positive means slower.
@@ -2350,18 +2352,12 @@ function RunDetail({
             </div>
             <div>
               <span>Full-kilometre split consistency</span>
-              <strong>
-                {n(a.splitCV, 1)}
-                <small> % CV</small>
-              </strong>
+              <strong>{withUnit(a.splitCV, "% CV", 1)}</strong>
               <p>Lower means more even full-kilometre times.</p>
             </div>
             <div>
               <span>Second-half split change</span>
-              <strong>
-                {n(a.splitChange, 1)}
-                <small> %</small>
-              </strong>
+              <strong>{withUnit(a.splitChange, "%", 1)}</strong>
               <p>
                 {a.splitChange == null
                   ? "More full-kilometre splits are needed."
@@ -2372,26 +2368,17 @@ function RunDetail({
             </div>
             <div>
               <span>Cadence change</span>
-              <strong>
-                {n(a.cadenceChange, 1)}
-                <small> spm</small>
-              </strong>
+              <strong>{withUnit(a.cadenceChange, "spm", 1)}</strong>
               <p>Second half minus first half of valid paired records.</p>
             </div>
             <div>
               <span>Late-run HR change after warm-up</span>
-              <strong>
-                {n(a.drift.hrChange, 1)}
-                <small> %</small>
-              </strong>
+              <strong>{withUnit(a.drift.hrChange, "%", 1)}</strong>
               <p>Only reported when decoupling quality checks pass.</p>
             </div>
             <div>
               <span>Late-run pace change after warm-up</span>
-              <strong>
-                {n(a.drift.paceChange, 1)}
-                <small> %</small>
-              </strong>
+              <strong>{withUnit(a.drift.paceChange, "%", 1)}</strong>
               <p>Positive means slower. See Data / Settings for the method.</p>
             </div>
           </div>

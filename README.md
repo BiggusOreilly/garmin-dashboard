@@ -76,3 +76,11 @@ See `docs/PERFORMANCE.md` for methods, sample thresholds, limitations, migration
 Credible Garmin `fastestSplit_5000` results now count toward your 5K PB even if FIT reconstruction is unavailable or inconclusive. The 5K page uses one evidence-labelled performance table; brief bounded turnarounds are tolerated without removing elapsed time. Diagnostic reasons remain available for excluded results.
 
 After pulling, close and reopen the dashboard: existing summaries are recalculated automatically. **No Setup rerun, database deletion, Full History refresh or API-key re-entry is needed.** Normal **Refresh Garmin Data.command** retries missing/incomplete FIT streams with cooldown. For one affected activity, open Run Detail → **Revalidate activity data** to force a fresh official FIT import immediately. Full History remains an optional, broader reimport. See `docs/FIVE_K.md`.
+
+### Formatting, themes and 10K records
+
+The dashboard now shares polished duration/pace/number/date formatting, five coordinated dark palettes and local date preferences under **Data / Settings → Appearance & preferences**. Comparisons display oldest first and keep Garmin IDs out of labels. Pace/HR views offer chronological run groups, matched-effort trends and within-run HR-band curves.
+
+Personal Records now applies distance-aware slowdown/GPS-wobble tolerance through 10K, accepts Garmin's explicit `fastestSplit_10000` where available, and shows near-10K efforts with specific reasons rather than inventing an exact time. All performances remain in history; PB progression contains new bests only. See `docs/REFINEMENT.md` for exact methods and update steps.
+
+After pulling, close/reopen the dashboard to rebuild derived calculations automatically, then refresh normally. No Setup rerun, key re-entry, database deletion, new production dependency or Node/npm installation is needed. Revalidate an individual activity only if FIT data is incomplete; Full History is optional for older edits. Deterministic observations remain local and free of AI API costs.
