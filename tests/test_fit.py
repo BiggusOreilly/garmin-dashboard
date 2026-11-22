@@ -6,12 +6,12 @@ from fitdecode.utils import compute_crc
 from companion.fit import parse_fit
 
 # Build a tiny FIT file from defined bytes: 3 synthetic records, no real athlete.
-def synthetic_fit():
+def synthetic_fit(start=1_000_000):
     fields=[(253,4,0x86),(5,4,0x86),(6,2,0x84),(3,1,0x02),(4,1,0x02),(2,2,0x84)]
     definition=bytes([0x40,0,0])+struct.pack('<H',20)+bytes([len(fields)])+b''.join(bytes(f) for f in fields)
     data=definition
     for i in range(3):
-        data+=bytes([0])+struct.pack('<IIHBBH',1_000_000+i*5,i*1500,3000,140+i,87,2600)
+        data+=bytes([0])+struct.pack('<IIHBBH',start+i*5,i*1500,3000,140+i,87,2600)
     header=struct.pack('<BBHI4s',14,0x20,2140,len(data),b'.FIT')
     header+=struct.pack('<H',compute_crc(header))
     content=header+data
