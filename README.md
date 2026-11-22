@@ -15,6 +15,18 @@ Stride connects your running and recovery in a polished, dark dashboard. Explore
 
 Download the complete project, including `companion/static/`. Those are the production dashboard assets, already built in Codex Cloud. If Finder opens a `.command` file in a text editor, use Finder's Get Info → Open with → Terminal. The repository preserves the launchers' executable permissions; a Git clone preserves them most reliably.
 
+## Export your latest run for analysis
+
+Once your run has synced to Garmin Connect, double-click **Export Latest Run.command** in the project folder. It uses the existing Setup credentials and Python environment. The dashboard can be closed, and you can export before your first dashboard refresh.
+
+The launcher checks Garmin Connect for your newest completed run and downloads its current summary and original FIT recording. It saves a readable JSON file such as `Garmin_Run_2026-11-22_10km_123456789.json` in `~/Downloads/Garmin Runs/` and selects it in Finder. Drag the selected file into ChatGPT when you’re ready to share it.
+
+Each run has one export, identified by the Garmin activity ID in the JSON. Exporting it again updates the file. If Garmin changes the date or distance, the filename updates too. Recognized legacy exports with the same ID are migrated. A failed download, invalid data, or interrupted write leaves the previous export valid.
+
+The JSON includes every original timestamped FIT record, along with available laps, splits, running dynamics, training metrics, and weather. Field definitions give source units, including FIT strides per minute and calculated total steps per minute. Calculated fields are identified separately. Elapsed, moving, and FIT timer times are distinct. Kilometre references use recorded laps at kilometre boundaries. Garmin may omit optional datasets, which the launcher reports. Location coordinates, account identifiers, and credentials are excluded.
+
+Wait for Garmin to finish syncing if the original recording is missing or incomplete. If Garmin rejects the configured key, use **Setup Garmin Dashboard.command** to replace it. If macOS asks whether Terminal can access Downloads, allow access so it can save the file. To run the same export from a terminal, use `.venv/bin/python -m companion.export_run` from the project root and add `--reveal` to select the output in Finder.
+
 ## From then on
 
 - **Update your data:** double-click `Refresh Garmin Data.command`, or use **Refresh data** inside the locally running dashboard.
